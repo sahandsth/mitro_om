@@ -7,7 +7,7 @@ export default function Navbar() {
         <nav className="hero-nav">
             <div className="hero-logo">
                 <Image
-                    src="/logo.png"
+                    src="/Logo.png"
                     alt="Logo"
                     width={45}
                     height={45}
