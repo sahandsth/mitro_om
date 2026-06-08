@@ -1,20 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 
 const STRIP_W = 54;
 const MAX_STACK = 3;
 const HOLD_RATIO = 0.62;
 const EASE = (t: number) => 1 - Math.pow(1 - t, 3);
-
-const CATEGORIES = [
-    "Branding",
-    "Social Media Management",
-    "UI Design",
-    "Website Development",
-    "Advertisement campaign",
-];
 
 const PROJECTS = [
     {
@@ -115,7 +107,13 @@ const PROJECTS = [
     },
 ];
 
-type Phase = "intro" | "transition" | "cards";
+const ALL_IMAGE_URLS = PROJECTS.flatMap((p) => [
+    p.mainImage,
+    p.cover,
+    ...p.scatter,
+]);
+
+type Phase = "intro" | "opening" | "cards";
 
 type CardLayout = {
     visible: boolean;
@@ -124,25 +122,78 @@ type CardLayout = {
     width: number;
     translateX: number;
     zIndex: number;
-    stackPos?: number;
     scatterActive: boolean;
     stripOnly: boolean;
 };
+
+function usePreloadProgress(total: number) {
+    const loadedRef = useRef(new Set<string>());
+    const [count, setCount] = useState(0);
+
+    const markLoaded = useCallback((src: string) => {
+        if (loadedRef.current.has(src)) return;
+        loadedRef.current.add(src);
+        setCount(loadedRef.current.size);
+    }, []);
+
+    return {
+        progress: total > 0 ? count / total : 1,
+        ready: count >= total,
+        markLoaded,
+    };
+}
+
+function PfImg({
+    src,
+    alt,
+    sizes,
+    priority,
+    className,
+}: {
+    src: string;
+    alt: string;
+    sizes: string;
+    priority?: boolean;
+    className?: string;
+}) {
+    const [loaded, setLoaded] = useState(false);
+
+    return (
+        <div className={`pf-img-wrap ${loaded ? "pf-img-wrap--loaded" : ""} ${className ?? ""}`}>
+            {!loaded && <span className="pf-img-shimmer" aria-hidden="true" />}
+            <Image
+                src={src}
+                alt={alt}
+                fill
+                sizes={sizes}
+                priority={priority}
+                onLoad={() => setLoaded(true)}
+                style={{ objectFit: "cover" }}
+            />
+        </div>
+    );
+}
 
 export default function Portfolio() {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const stageRef = useRef<HTMLDivElement>(null);
     const [stageWidth, setStageWidth] = useState(0);
     const [phase, setPhase] = useState<Phase>("intro");
+    const [openFrac, setOpenFrac] = useState(0);
     const [cardIndex, setCardIndex] = useState(0);
     const [cardFrac, setCardFrac] = useState(0);
+    const [showLoader, setShowLoader] = useState(true);
 
-    const INTRO_VH = 1;
-    const TRANSITION_VH = 0.75;
+    const imageUrls = useMemo(() => ALL_IMAGE_URLS, []);
+    const { progress: loadProgress, ready: imagesReady, markLoaded } =
+        usePreloadProgress(imageUrls.length);
+
+    const INTRO_VH = 0.45;
+    const OPEN_VH = 0.65;
     const CARD_VH = 1.4;
 
     const totalVh =
-        INTRO_VH + TRANSITION_VH + PROJECTS.length * CARD_VH + 0.5;
+        INTRO_VH + OPEN_VH + PROJECTS.length * CARD_VH + 0.5;
 
     const measureStage = useCallback(() => {
         if (stageRef.current) {
@@ -157,6 +208,12 @@ export default function Portfolio() {
     }, [measureStage]);
 
     useEffect(() => {
+        if (!imagesReady) return;
+        const t = window.setTimeout(() => setShowLoader(false), 280);
+        return () => window.clearTimeout(t);
+    }, [imagesReady]);
+
+    useEffect(() => {
         const handleScroll = () => {
             const wrapper = wrapperRef.current;
             if (!wrapper) return;
@@ -166,31 +223,37 @@ export default function Portfolio() {
 
             if (scrolled < 0) {
                 setPhase("intro");
+                setOpenFrac(0);
                 setCardIndex(0);
                 setCardFrac(0);
                 return;
             }
 
             const introEnd = INTRO_VH * vh;
-            const transitionEnd = introEnd + TRANSITION_VH * vh;
+            const openEnd = introEnd + OPEN_VH * vh;
 
             if (scrolled < introEnd) {
                 setPhase("intro");
+                setOpenFrac(0);
                 setCardIndex(0);
                 setCardFrac(0);
                 return;
             }
 
-            if (scrolled < transitionEnd) {
-                setPhase("transition");
+            if (scrolled < openEnd) {
+                setPhase("opening");
+                const raw = (scrolled - introEnd) / (OPEN_VH * vh);
+                setOpenFrac(EASE(raw));
                 setCardIndex(0);
                 setCardFrac(0);
                 return;
             }
 
             setPhase("cards");
+            setOpenFrac(1);
+
             const perCard = CARD_VH * vh;
-            const raw = (scrolled - transitionEnd) / perCard;
+            const raw = (scrolled - openEnd) / perCard;
             const maxIdx = PROJECTS.length - 1;
             const clamped = Math.min(raw, maxIdx);
             const idx = Math.floor(clamped);
@@ -221,6 +284,21 @@ export default function Portfolio() {
         return Math.min(MAX_STACK, Math.max(0, remaining));
     };
 
+    const getEnteringLayout = (
+        t: number,
+        stackBefore: number,
+        stackAfter: number
+    ): Pick<CardLayout, "width" | "left" | "scatterActive" | "stripOnly"> => {
+        const widthEnd = stageWidth - stackAfter * STRIP_W;
+        const leftStart = stageWidth - stackBefore * STRIP_W;
+        return {
+            width: STRIP_W + t * (widthEnd - STRIP_W),
+            left: leftStart * (1 - t),
+            scatterActive: t > 0.5,
+            stripOnly: t < 0.32,
+        };
+    };
+
     const getCardLayout = (i: number): CardLayout => {
         const hidden: CardLayout = {
             visible: false,
@@ -236,20 +314,38 @@ export default function Portfolio() {
 
         if (phase === "intro") return hidden;
 
-        if (phase === "transition") {
-            if (i >= MAX_STACK) return hidden;
-            const stackCount = Math.min(MAX_STACK, PROJECTS.length);
-            return {
-                visible: true,
-                mode: "stack",
-                width: STRIP_W,
-                left: stageWidth - (stackCount - i) * STRIP_W,
-                translateX: 0,
-                zIndex: 5 + i,
-                stackPos: i,
-                scatterActive: false,
-                stripOnly: true,
-            };
+        if (phase === "opening") {
+            const t = openFrac;
+            const stackBefore = Math.min(MAX_STACK, PROJECTS.length);
+            const stackAfter = getStackCount(0, false);
+
+            if (i === 0) {
+                const entering = getEnteringLayout(t, stackBefore, stackAfter);
+                return {
+                    visible: true,
+                    mode: t < 1 ? "entering" : "active",
+                    ...entering,
+                    translateX: 0,
+                    zIndex: 18,
+                };
+            }
+
+            if (i >= 1 && i < stackBefore) {
+                const stackCount = stackBefore - 1;
+                const pos = i - 1;
+                return {
+                    visible: true,
+                    mode: "stack",
+                    width: STRIP_W,
+                    left: stageWidth - (stackCount - pos) * STRIP_W,
+                    translateX: 0,
+                    zIndex: 8 + pos,
+                    scatterActive: false,
+                    stripOnly: true,
+                };
+            }
+
+            return hidden;
         }
 
         const maxIdx = PROJECTS.length - 1;
@@ -300,18 +396,13 @@ export default function Portfolio() {
         if (i === cardIndex + 1 && isTransitioning) {
             const stackBefore = getStackCount(cardIndex, true);
             const stackAfter = getStackCount(cardIndex + 1, false);
-            const widthStart = STRIP_W;
-            const widthEnd = stageWidth - stackAfter * STRIP_W;
-            const leftStart = stageWidth - stackBefore * STRIP_W;
+            const entering = getEnteringLayout(t, stackBefore, stackAfter);
             return {
                 visible: true,
                 mode: "entering",
-                width: widthStart + t * (widthEnd - widthStart),
-                left: leftStart * (1 - t),
+                ...entering,
                 translateX: 0,
                 zIndex: 18,
-                scatterActive: t > 0.55,
-                stripOnly: t < 0.35,
             };
         }
 
@@ -333,7 +424,6 @@ export default function Portfolio() {
                 left: stageWidth - (stackCount - pos) * STRIP_W,
                 translateX: 0,
                 zIndex: 8 + pos,
-                stackPos: pos,
                 scatterActive: false,
                 stripOnly: true,
             };
@@ -341,6 +431,9 @@ export default function Portfolio() {
 
         return hidden;
     };
+
+    const introOpacity =
+        phase === "intro" ? 1 : phase === "opening" ? 1 - openFrac : 0;
 
     return (
         <>
@@ -353,24 +446,51 @@ export default function Portfolio() {
                     <div className="pf-bg" />
 
                     <div
-                        className={`pf-intro
-                            ${phase === "transition" ? "pf-intro--aside" : ""}
-                            ${phase === "cards" ? "pf-intro--gone" : ""}
-                        `}
+                        className="pf-preload"
+                        aria-hidden="true"
+                    >
+                        {imageUrls.map((src) => (
+                            <Image
+                                key={src}
+                                src={src}
+                                alt=""
+                                width={280}
+                                height={360}
+                                priority
+                                onLoad={() => markLoaded(src)}
+                                onError={() => markLoaded(src)}
+                            />
+                        ))}
+                    </div>
+
+                    <div
+                        className={`pf-loader ${!showLoader ? "pf-loader--done" : ""}`}
+                        aria-live="polite"
+                        aria-busy={!imagesReady}
+                    >
+                        <span className="pf-loader-label">Portfolio</span>
+                        <div className="pf-loader-track">
+                            <div
+                                className="pf-loader-bar"
+                                style={{
+                                    transform: `scaleX(${Math.max(loadProgress, 0.04)})`,
+                                }}
+                            />
+                        </div>
+                        <span className="pf-loader-pct">
+                            {Math.round(loadProgress * 100)}%
+                        </span>
+                    </div>
+
+                    <div
+                        className="pf-intro"
+                        style={{
+                            opacity: introOpacity,
+                            pointerEvents: introOpacity > 0.05 ? "auto" : "none",
+                        }}
                     >
                         <h1 className="pf-intro-title">Portfolio</h1>
-
-                        {phase === "transition" && (
-                            <ul className="pf-categories">
-                                {CATEGORIES.map((cat) => (
-                                    <li key={cat}>{cat}</li>
-                                ))}
-                            </ul>
-                        )}
-
-                        {phase === "intro" && (
-                            <span className="pf-intro-index">01</span>
-                        )}
+                        <span className="pf-intro-index">01</span>
                     </div>
 
                     <div ref={stageRef} className="pf-stage">
@@ -399,14 +519,10 @@ export default function Portfolio() {
                                         {layout.stripOnly ? (
                                             <>
                                                 <div className="pf-strip-img">
-                                                    <Image
+                                                    <PfImg
                                                         src={project.cover}
                                                         alt=""
-                                                        fill
                                                         sizes="60px"
-                                                        style={{
-                                                            objectFit: "cover",
-                                                        }}
                                                     />
                                                 </div>
                                                 <span className="pf-strip-num">
@@ -437,32 +553,22 @@ export default function Portfolio() {
                                                                 key={j}
                                                                 className={`pf-scatter-item pf-scatter-item--${j}`}
                                                             >
-                                                                <Image
+                                                                <PfImg
                                                                     src={src}
                                                                     alt=""
-                                                                    fill
                                                                     sizes="180px"
-                                                                    style={{
-                                                                        objectFit:
-                                                                            "cover",
-                                                                    }}
                                                                 />
                                                             </div>
                                                         )
                                                     )}
                                                     <div className="pf-scatter-main">
-                                                        <Image
+                                                        <PfImg
                                                             src={
                                                                 project.mainImage
                                                             }
                                                             alt={project.title}
-                                                            fill
                                                             sizes="200px"
-                                                            style={{
-                                                                objectFit:
-                                                                    "cover",
-                                                            }}
-                                                            priority={i === 0}
+                                                            priority={i <= 1}
                                                         />
                                                     </div>
                                                 </div>
@@ -502,6 +608,65 @@ export default function Portfolio() {
                     z-index: 0;
                 }
 
+                .pf-preload {
+                    position: absolute;
+                    width: 0;
+                    height: 0;
+                    overflow: hidden;
+                    opacity: 0;
+                    pointer-events: none;
+                    z-index: -1;
+                }
+
+                .pf-loader {
+                    position: absolute;
+                    inset: 0;
+                    z-index: 50;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 16px;
+                    background: #c4c4c4;
+                    transition: opacity 0.55s ease, visibility 0.55s ease;
+                }
+
+                .pf-loader--done {
+                    opacity: 0;
+                    visibility: hidden;
+                    pointer-events: none;
+                }
+
+                .pf-loader-label {
+                    font-family: "Francy", serif;
+                    font-size: clamp(32px, 5vw, 56px);
+                    color: rgba(255, 255, 255, 0.9);
+                    letter-spacing: -0.02em;
+                }
+
+                .pf-loader-track {
+                    width: min(200px, 40vw);
+                    height: 2px;
+                    background: rgba(0, 0, 0, 0.1);
+                    border-radius: 2px;
+                    overflow: hidden;
+                }
+
+                .pf-loader-bar {
+                    height: 100%;
+                    width: 100%;
+                    background: rgba(255, 255, 255, 0.75);
+                    transform-origin: left center;
+                    transition: transform 0.25s ease;
+                }
+
+                .pf-loader-pct {
+                    font-family: "Francy", serif;
+                    font-size: 13px;
+                    color: rgba(60, 60, 60, 0.5);
+                    letter-spacing: 0.06em;
+                }
+
                 .pf-intro {
                     position: absolute;
                     inset: 0;
@@ -510,25 +675,8 @@ export default function Portfolio() {
                     flex-direction: column;
                     align-items: center;
                     justify-content: center;
-                    background: #c4c4c4;
-                    transition:
-                        width 0.85s cubic-bezier(0.22, 1, 0.36, 1),
-                        transform 0.85s cubic-bezier(0.22, 1, 0.36, 1),
-                        opacity 0.6s ease;
-                }
-
-                .pf-intro--aside {
-                    width: 38%;
-                    align-items: flex-start;
-                    justify-content: flex-start;
-                    padding: calc(var(--nav-h, 110px) + 24px) clamp(24px, 4vw, 56px)
-                        32px;
-                }
-
-                .pf-intro--gone {
-                    opacity: 0;
-                    pointer-events: none;
-                    transform: translateX(-55%);
+                    background: transparent;
+                    will-change: opacity;
                 }
 
                 .pf-intro-title {
@@ -539,11 +687,6 @@ export default function Portfolio() {
                     margin: 0;
                     line-height: 1;
                     letter-spacing: -0.02em;
-                    transition: font-size 0.7s cubic-bezier(0.22, 1, 0.36, 1);
-                }
-
-                .pf-intro--aside .pf-intro-title {
-                    font-size: clamp(36px, 5vw, 64px);
                 }
 
                 .pf-intro-index {
@@ -555,22 +698,6 @@ export default function Portfolio() {
                     font-size: clamp(14px, 1.2vw, 18px);
                     color: rgba(255, 255, 255, 0.85);
                     letter-spacing: 0.05em;
-                }
-
-                .pf-categories {
-                    list-style: none;
-                    margin: clamp(28px, 4vh, 48px) 0 0;
-                    padding: 0;
-                    display: flex;
-                    flex-direction: column;
-                    gap: clamp(6px, 1vh, 12px);
-                }
-
-                .pf-categories li {
-                    font-family: "Francy", serif;
-                    font-size: clamp(13px, 1.1vw, 16px);
-                    color: rgba(60, 60, 60, 0.55);
-                    letter-spacing: 0.02em;
                 }
 
                 .pf-stage {
@@ -612,6 +739,43 @@ export default function Portfolio() {
                 .pf-card-panel--strip {
                     padding: 0;
                     position: relative;
+                }
+
+                .pf-img-wrap {
+                    position: absolute;
+                    inset: 0;
+                    background: #b0b0b0;
+                }
+
+                .pf-img-wrap :global(img) {
+                    opacity: 0;
+                    transition: opacity 0.45s ease;
+                }
+
+                .pf-img-wrap--loaded :global(img) {
+                    opacity: 1;
+                }
+
+                .pf-img-shimmer {
+                    position: absolute;
+                    inset: 0;
+                    background: linear-gradient(
+                        110deg,
+                        #b0b0b0 0%,
+                        #c8c8c8 45%,
+                        #b0b0b0 90%
+                    );
+                    background-size: 200% 100%;
+                    animation: pf-shimmer 1.2s ease-in-out infinite;
+                }
+
+                @keyframes pf-shimmer {
+                    0% {
+                        background-position: 100% 0;
+                    }
+                    100% {
+                        background-position: -100% 0;
+                    }
                 }
 
                 .pf-card-header {
@@ -748,6 +912,7 @@ export default function Portfolio() {
                     inset: 0;
                     box-shadow: inset 6px 0 12px rgba(0, 0, 0, 0.12);
                     pointer-events: none;
+                    z-index: 2;
                 }
 
                 .pf-strip-num {
@@ -760,16 +925,10 @@ export default function Portfolio() {
                     color: rgba(255, 255, 255, 0.85);
                     letter-spacing: 0.08em;
                     white-space: nowrap;
-                    z-index: 2;
+                    z-index: 3;
                 }
 
                 @media (max-width: 768px) {
-                    .pf-intro--aside {
-                        width: 100%;
-                        opacity: 0;
-                        pointer-events: none;
-                    }
-
                     .pf-scatter--active .pf-scatter-item--2,
                     .pf-scatter--active .pf-scatter-item--3 {
                         opacity: 0;

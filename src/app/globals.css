@@ -22,22 +22,11 @@ body {
     box-sizing: border-box;
 }
 
-.site-section {
-    min-height: 100vh;
-    scroll-margin-top: var(--nav-h);
-}
-
-.site-section--about {
-    background: #d0d0d0;
-}
-
-.site-section--contacts {
-    background: #080808;
-}
-
 #home,
 #services,
-#portfolio {
+#portfolio,
+#about,
+#contacts {
     scroll-margin-top: var(--nav-h);
 }
 .hero-nav {
