@@ -17,6 +17,8 @@ export default function Home() {
             <HeroSection/>
             <Services/>
             <Portfolio/>
+            <section id="about" className="site-section site-section--about" />
+            <section id="contacts" className="site-section site-section--contacts" />
         </main>
     );
 }

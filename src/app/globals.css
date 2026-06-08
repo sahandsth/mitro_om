@@ -6,6 +6,11 @@
 
 html {
     scroll-behavior: auto;
+    scroll-padding-top: var(--nav-h);
+}
+
+:root {
+    --nav-h: 110px;
 }
 
 body {
@@ -16,6 +21,25 @@ body {
 * {
     box-sizing: border-box;
 }
+
+.site-section {
+    min-height: 100vh;
+    scroll-margin-top: var(--nav-h);
+}
+
+.site-section--about {
+    background: #d0d0d0;
+}
+
+.site-section--contacts {
+    background: #080808;
+}
+
+#home,
+#services,
+#portfolio {
+    scroll-margin-top: var(--nav-h);
+}
 .hero-nav {
     position: fixed;
     top: 0;
@@ -24,7 +48,20 @@ body {
     z-index: 999;
     display: flex;
     align-items: center;
-    padding: 60px 62px 0 62px;
+    padding: 24px 62px 20px 62px;
+    pointer-events: none;
+}
+
+.hero-nav > * {
+    pointer-events: auto;
+}
+
+.hero-logo {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    line-height: 0;
 }
 .hero-nav-links {
     display: flex;
@@ -32,7 +69,8 @@ body {
     margin: 0 auto;
     padding-right: 52px;
 }
-.hero-nav-links a {
+.hero-nav-links a,
+.hero-nav-btn {
     font-family: "Francy", serif;
     font-size: 30px;
     font-weight: 400;
@@ -40,8 +78,14 @@ body {
     text-decoration: none;
     letter-spacing: 0.025em;
     transition: color 0.2s ease;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
 }
-.hero-nav-links a:hover {
+
+.hero-nav-links a:hover,
+.hero-nav-btn:hover {
     color: rgba(70, 70, 70, 1);
 }
 @media (max-width: 768px) {
@@ -54,7 +98,8 @@ body {
         padding-right: 0;
     }
 
-    .hero-nav-links a {
+    .hero-nav-links a,
+    .hero-nav-btn {
         font-size: 13px;
     }
 

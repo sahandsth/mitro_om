@@ -102,6 +102,7 @@ export default function HeroSection() {
             `}</style>
 
             <div
+                id="home"
                 ref={wrapperRef}
                 style={{ height: `${wrapperVh * 100}vh`, position: "relative" }}
             >
@@ -169,6 +170,7 @@ export default function HeroSection() {
                     text-align: center;
                     user-select: none;
                     gap: 1px;
+                    padding-top: var(--nav-h, 110px);
                 }
 
                 .hero-static {

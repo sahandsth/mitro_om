@@ -220,6 +220,7 @@ export default function ServicesSection() {
                     flex-direction: column;
                     align-items: center;
                     transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+                    padding-top: calc(var(--nav-h, 110px) * 0.35);
                 }
 
                 .svc-item {
