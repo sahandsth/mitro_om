@@ -148,8 +148,9 @@ export default function ServicesSection() {
             <div
                 ref={wrapperRef}
                 style={{ height: `${totalVh * 100}vh`, position: "relative" }}
+
             >
-                <div className="svc-sticky">
+                <div className="svc-sticky" >
                     <div className="svc-bg" />
 
                     <div className="svc-layout">
@@ -189,7 +190,7 @@ export default function ServicesSection() {
                         </div>
 
                         {/* RIGHT: image */}
-                        <div className={`svc-image-wrap ${!isImageVisible ? "svc-image-wrap--hidden" : ""}`}>
+                        <div id="services" className={`svc-image-wrap ${!isImageVisible ? "svc-image-wrap--hidden" : ""}`}>
                             {SERVICES.map((svc, i) => (
                                 <div
                                     key={svc.title}

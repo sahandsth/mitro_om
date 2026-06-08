@@ -2,6 +2,7 @@
 import HeroSection from "@/components/Herosection";
 import Services from "@/components/Services";
 import {useEffect} from "react";
+import Portfolio from "@/components/Portfolio";
 
 export default function Home() {
 
@@ -15,6 +16,7 @@ export default function Home() {
         <main>
             <HeroSection/>
             <Services/>
+            <Portfolio/>
         </main>
     );
 }
