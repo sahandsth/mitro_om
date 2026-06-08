@@ -40,18 +40,6 @@ export default function Portfolio() {
                     Portfolio
                 </div>
 
-                <div className="w-screen h-full flex items-center justify-center bg-blue-500 text-[6vw] font-bold">
-                    Saghar
-
-                </div>
-
-                <div className="w-screen h-full flex items-center justify-center bg-green-500 text-[6vw] font-bold">
-                    Maani
-                </div>
-
-                <div className="w-screen h-full flex items-center justify-center bg-yellow-500 text-black text-[6vw] font-bold">
-                    Elahe
-                </div>
             </div>
         </section>
     );

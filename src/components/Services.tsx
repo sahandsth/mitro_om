@@ -153,7 +153,7 @@ export default function ServicesSection() {
                 <div className="svc-sticky" >
                     <div className="svc-bg" />
 
-                    <div className="svc-layout">
+                    <div className="svc-layout" >
                         {/* LEFT: service list */}
                         <div
                             ref={listRef}
@@ -190,7 +190,7 @@ export default function ServicesSection() {
                         </div>
 
                         {/* RIGHT: image */}
-                        <div id="services" className={`svc-image-wrap ${!isImageVisible ? "svc-image-wrap--hidden" : ""}`}>
+                        <div  className={`svc-image-wrap ${!isImageVisible ? "svc-image-wrap--hidden" : ""}`}>
                             {SERVICES.map((svc, i) => (
                                 <div
                                     key={svc.title}
