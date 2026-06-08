@@ -8,25 +8,45 @@ const SERVICES = [
         title: "Brand Strategy",
         description:
             "We craft purposeful brand strategies that align your vision with your audience — building a foundation that drives recognition, trust, and long-term growth.",
-        image: "/images/brand-strategy.jpg",
+        images: [
+            "https://picsum.photos/seed/brand1/600/450",
+            "https://picsum.photos/seed/brand2/600/450",
+            "https://picsum.photos/seed/brand3/600/450",
+            "https://picsum.photos/seed/brand4/600/450",
+        ],
     },
     {
         title: "Visual Identity",
         description:
             "From logo to color system, we design cohesive visual identities that speak your brand's language clearly and beautifully across every touchpoint.",
-        image: "/images/visual-identity.jpg",
+        images: [
+            "https://picsum.photos/seed/visual1/600/450",
+            "https://picsum.photos/seed/visual2/600/450",
+            "https://picsum.photos/seed/visual3/600/450",
+            "https://picsum.photos/seed/visual4/600/450",
+        ],
     },
     {
-        title: "Website Design",
+        title: "Website",
         description:
             "We design websites that are as functional as they are stunning — crafted to convert visitors into clients while reflecting your brand at its best.",
-        image: "/images/website-design.jpg",
+        images: [
+            "https://picsum.photos/seed/web1/600/450",
+            "https://picsum.photos/seed/web2/600/450",
+            "https://picsum.photos/seed/web3/600/450",
+            "https://picsum.photos/seed/web4/600/450",
+        ],
     },
     {
         title: "Content Creation",
         description:
             "Compelling content tailored to your brand voice — from copywriting to art direction — crafted to engage, inspire, and convert your audience.",
-        image: "/images/content-creation.jpg",
+        images: [
+            "https://picsum.photos/seed/content1/600/450",
+            "https://picsum.photos/seed/content2/600/450",
+            "https://picsum.photos/seed/content3/600/450",
+            "https://picsum.photos/seed/content4/600/450",
+        ],
     },
 ];
 
@@ -35,22 +55,15 @@ export default function ServicesSection() {
     const listRef = useRef<HTMLDivElement>(null);
     const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-    const [activeIndex, setActiveIndex] = useState(-1);
-    const [expandedIndex, setExpandedIndex] = useState(-1);
+    const [openIndex, setOpenIndex] = useState(-1);
     const [introVisible, setIntroVisible] = useState(false);
-    // translateY to vertically center the active item
     const [listOffset, setListOffset] = useState(0);
 
     const INTRO_VH = 0.4;
     const EXPAND_VH = 1.2;
 
-    const totalVh =
-        1 +
-        SERVICES.length * INTRO_VH +
-        SERVICES.length * EXPAND_VH +
-        1;
+    const totalVh = INTRO_VH + SERVICES.length * EXPAND_VH + 0.5;
 
-    // Compute how much to shift the list so that item `idx` is vertically centered
     const computeOffset = (idx: number) => {
         const list = listRef.current;
         const item = itemRefs.current[idx];
@@ -58,13 +71,6 @@ export default function ServicesSection() {
 
         const listRect = list.getBoundingClientRect();
         const itemRect = item.getBoundingClientRect();
-
-        const itemCenterRelative =
-            (itemRect.top - listRect.top) + itemRect.height / 2;
-
-        const vh = window.innerHeight;
-        const targetCenter = vh / 2;
-
         const listCenter = listRect.top + listRect.height / 2;
         const itemCenter = itemRect.top + itemRect.height / 2;
 
@@ -78,60 +84,43 @@ export default function ServicesSection() {
 
             const wrapperTop = wrapper.getBoundingClientRect().top;
             const scrolled = -wrapperTop;
+            const vh = window.innerHeight;
 
             if (scrolled < 0) {
                 setIntroVisible(false);
-                setActiveIndex(-1);
-                setExpandedIndex(-1);
+                setOpenIndex(-1);
                 setListOffset(0);
                 return;
             }
 
-            const vh = window.innerHeight;
-            const introEnd = vh * 1;
+            const introEnd = vh * INTRO_VH;
 
             if (scrolled < introEnd) {
                 setIntroVisible(true);
-                setActiveIndex(-1);
-                setExpandedIndex(-1);
+                setOpenIndex(-1);
                 setListOffset(0);
                 return;
             }
 
             setIntroVisible(true);
 
-            const phaseStart = introEnd;
-            const perService = (INTRO_VH + EXPAND_VH) * vh;
-            const phaseProgress = scrolled - phaseStart;
+            const phaseProgress = scrolled - introEnd;
+            const perService = EXPAND_VH * vh;
             const serviceIdx = Math.floor(phaseProgress / perService);
-            const withinService = phaseProgress - serviceIdx * perService;
+            const idx = Math.min(serviceIdx, SERVICES.length - 1);
 
-            if (serviceIdx >= SERVICES.length) {
-                const lastIdx = SERVICES.length - 1;
-                setActiveIndex(lastIdx);
-                setExpandedIndex(lastIdx);
-                setListOffset(computeOffset(lastIdx));
-                return;
-            }
-
-            setActiveIndex(serviceIdx);
-
-            const expandThreshold = INTRO_VH * vh;
-            if (withinService >= expandThreshold) {
-                setExpandedIndex(serviceIdx);
-                setListOffset(computeOffset(serviceIdx));
-            } else {
-                setExpandedIndex(-1);
-                setListOffset(0);
-            }
+            setOpenIndex(idx);
+            requestAnimationFrame(() => setListOffset(computeOffset(idx)));
         };
 
         window.addEventListener("scroll", handleScroll, { passive: true });
+        window.addEventListener("resize", handleScroll, { passive: true });
         handleScroll();
-        return () => window.removeEventListener("scroll", handleScroll);
+        return () => {
+            window.removeEventListener("scroll", handleScroll);
+            window.removeEventListener("resize", handleScroll);
+        };
     }, []);
-
-    const isImageVisible = expandedIndex !== -1;
 
     return (
         <>
@@ -146,74 +135,65 @@ export default function ServicesSection() {
       `}</style>
 
             <div
+                id="services"
                 ref={wrapperRef}
                 style={{ height: `${totalVh * 100}vh`, position: "relative" }}
-
             >
-                <div className="svc-sticky" >
+                <div className="svc-sticky">
                     <div className="svc-bg" />
 
-                    <div className="svc-layout" >
-                        {/* LEFT: service list */}
-                        <div
-                            ref={listRef}
-                            className="svc-list"
-                            style={{ transform: `translateY(${listOffset}px)` }}
-                        >
-                            {SERVICES.map((svc, i) => {
-                                const isActive = activeIndex === i;
-                                const isExpanded = expandedIndex === i;
-                                const isPast = activeIndex > i;
-                                const isVisible = introVisible;
+                    <div
+                        ref={listRef}
+                        className="svc-list"
+                        style={{ transform: `translateY(${listOffset}px)` }}
+                    >
+                        {SERVICES.map((svc, i) => {
+                            const isOpen = openIndex === i;
+                            const isPast = openIndex > i;
 
-                                return (
-                                    <div
-                                        key={svc.title}
-                                        ref={(el) => { itemRefs.current[i] = el; }}
-                                        className={`svc-item
-                      ${isVisible ? "svc-item--visible" : ""}
-                      ${isActive ? "svc-item--active" : ""}
-                      ${isPast ? "svc-item--past" : ""}
-                      ${isExpanded ? "svc-item--expanded" : ""}
-                    `}
-                                        style={{ transitionDelay: `${i * 0.08}s` }}
-                                    >
-                                        <div className="svc-title-row">
-                                            <span className="svc-title">{svc.title}</span>
-                                        </div>
-                                        <div className="svc-desc">
-                                            <p>{svc.description}</p>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        {/* RIGHT: image */}
-                        <div  className={`svc-image-wrap ${!isImageVisible ? "svc-image-wrap--hidden" : ""}`}>
-                            {SERVICES.map((svc, i) => (
+                            return (
                                 <div
                                     key={svc.title}
-                                    className={`svc-image-slot ${expandedIndex === i ? "svc-image-slot--visible" : ""}`}
+                                    ref={(el) => {
+                                        itemRefs.current[i] = el;
+                                    }}
+                                    className={`svc-item
+                                        ${introVisible ? "svc-item--visible" : ""}
+                                        ${isOpen ? "svc-item--open" : ""}
+                                        ${isPast ? "svc-item--past" : ""}
+                                    `}
+                                    style={{ transitionDelay: `${i * 0.06}s` }}
                                 >
-                                    <div className="svc-img-inner">
-                                        <Image
-                                            src={svc.image}
-                                            alt={svc.title}
-                                            fill
-                                            style={{ objectFit: "cover" }}
-                                            sizes="40vw"
-                                        />
+                                    <div className="svc-title-row">
+                                        <span className="svc-title">{svc.title}</span>
+                                    </div>
+
+                                    <div className="svc-body">
+                                        <div className="svc-body-inner">
+                                            <p className="svc-desc">{svc.description}</p>
+                                            <div className="svc-grid">
+                                                {svc.images.map((src, j) => (
+                                                    <div key={j} className="svc-grid-cell">
+                                                        <Image
+                                                            src={src}
+                                                            alt=""
+                                                            fill
+                                                            sizes="(max-width: 900px) 45vw, 22vw"
+                                                            style={{ objectFit: "cover" }}
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                            ))}
-                        </div>
+                            );
+                        })}
                     </div>
                 </div>
             </div>
 
             <style jsx>{`
-                /* ── Sticky shell ── */
                 .svc-sticky {
                     position: sticky;
                     top: 0;
@@ -222,46 +202,34 @@ export default function ServicesSection() {
                     overflow: hidden;
                     display: flex;
                     align-items: center;
+                    justify-content: center;
                 }
 
-                /* ── Background ── */
                 .svc-bg {
                     position: absolute;
                     inset: 0;
-                    background: #0a0a0a;
+                    background: #080808;
                     z-index: 0;
                 }
 
-                /* ── Layout ── */
-                .svc-layout {
+                .svc-list {
                     position: relative;
                     z-index: 10;
-                    width: 100%;
-                    height: 100%;
-                    display: flex;
-                    align-items: center;
-                    padding: 0 7vw;
-                    gap: 4vw;
-                }
-
-                /* ── Left list ── */
-                .svc-list {
-                    flex: 1;
+                    width: min(92vw, 1180px);
                     display: flex;
                     flex-direction: column;
-                    gap: 0;
-                    transition: transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+                    align-items: center;
+                    transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
                 }
 
-                /* ── Each service item ── */
                 .svc-item {
+                    width: 100%;
                     overflow: hidden;
-                    padding: 0;
                     opacity: 0;
-                    transform: translateY(40px);
+                    transform: translateY(32px);
                     transition:
-                            opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
-                            transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+                        opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
+                        transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
                 }
 
                 .svc-item--visible {
@@ -269,116 +237,115 @@ export default function ServicesSection() {
                     transform: translateY(0);
                 }
 
-                /* ── Title row ── */
                 .svc-title-row {
                     display: flex;
-                    align-items: baseline;
-                    padding: 14px 0 12px;
-                    cursor: default;
+                    justify-content: center;
+                    padding: clamp(10px, 1.6vh, 18px) 0;
+                    text-align: center;
                 }
 
                 .svc-title {
                     font-family: "Francy", serif;
-                    font-size: clamp(34px, 5.2vw, 70px);
+                    font-size: clamp(36px, 5.5vw, 72px);
                     font-weight: 400;
-                    color: rgba(255, 255, 255, 0.18);
-                    letter-spacing: -0.01em;
-                    line-height: 1;
-                    transition: color 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+                    color: rgba(255, 255, 255, 0.14);
+                    letter-spacing: -0.02em;
+                    line-height: 1.05;
+                    transition: color 0.45s cubic-bezier(0.16, 1, 0.3, 1);
                 }
 
-                .svc-item--active .svc-title {
-                    color: rgba(255, 255, 255, 0.95);
+                .svc-item--open .svc-title {
+                    color: #ffffff;
                 }
 
                 .svc-item--past .svc-title {
-                    color: rgba(255, 255, 255, 0.22);
+                    color: rgba(255, 255, 255, 0.14);
                 }
 
-                /* ── Description — expands when active ── */
+                .svc-body {
+                    display: grid;
+                    grid-template-rows: 0fr;
+                    transition: grid-template-rows 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+                }
+
+                .svc-item--open .svc-body {
+                    grid-template-rows: 1fr;
+                }
+
+                .svc-body-inner {
+                    overflow: hidden;
+                    display: grid;
+                    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+                    gap: clamp(20px, 3vw, 48px);
+                    align-items: start;
+                    justify-content: center;
+                    max-width: 960px;
+                    margin: 0 auto;
+                    padding-bottom: clamp(16px, 2.5vh, 32px);
+                    opacity: 0;
+                    transform: translateY(12px);
+                    transition:
+                        opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.08s,
+                        transform 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.08s;
+                }
+
+                .svc-item--open .svc-body-inner {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+
                 .svc-desc {
-                    max-height: 0;
-                    overflow: hidden;
-                    transition:
-                            max-height 0.65s cubic-bezier(0.16, 1, 0.3, 1),
-                            opacity 0.5s ease,
-                            padding 0.5s ease;
-                    opacity: 0;
-                    padding-bottom: 0;
-                }
-
-                .svc-item--expanded .svc-desc {
-                    max-height: 200px;
-                    opacity: 1;
-                    padding-bottom: 20px;
-                }
-
-                .svc-desc p {
-                    font-family: "Francy", serif;
-                    font-size: clamp(13px, 1.1vw, 16px);
-                    color: rgba(255, 255, 255, 0.45);
+                    font-family: "Cormorant Garamond", Georgia, serif;
+                    font-size: clamp(14px, 1.15vw, 17px);
+                    font-weight: 300;
+                    color: rgba(255, 255, 255, 0.42);
                     line-height: 1.75;
-                    max-width: 520px;
                     margin: 0;
-                    letter-spacing: 0.01em;
+                    padding-top: 4px;
+                    text-align: center;
                 }
 
-                /* ── Right image area ── */
-                .svc-image-wrap {
-                    width: 36vw;
-                    height: 62vh;
-                    flex-shrink: 0;
+                .svc-grid {
+                    display: grid;
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 8px;
+                }
+
+                .svc-grid-cell {
                     position: relative;
-                    opacity: 1;
-                    transform: translateX(0);
-                    transition:
-                            opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1),
-                            transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
-                }
-
-                .svc-image-wrap--hidden {
-                    opacity: 0;
-                    transform: translateX(20px);
-                    pointer-events: none;
-                }
-
-                .svc-image-slot {
-                    position: absolute;
-                    inset: 0;
-                    opacity: 0;
-                    transform: scale(0.96) translateY(12px);
-                    transition:
-                            opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
-                            transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
-                    border-radius: 4px;
+                    aspect-ratio: 4 / 3;
+                    background: #141414;
                     overflow: hidden;
                 }
 
-                .svc-image-slot--visible {
-                    opacity: 1;
-                    transform: scale(1) translateY(0);
+                .svc-grid-cell:nth-child(1) {
+                    border-radius: 2px 0 0 0;
                 }
 
-                .svc-img-inner {
-                    position: relative;
-                    width: 100%;
-                    height: 100%;
-                    background: #1a1a1a;
+                .svc-grid-cell:nth-child(2) {
+                    border-radius: 0 2px 0 0;
                 }
 
-                /* ── Responsive ── */
+                .svc-grid-cell:nth-child(3) {
+                    border-radius: 0 0 0 2px;
+                }
+
+                .svc-grid-cell:nth-child(4) {
+                    border-radius: 0 0 2px 0;
+                }
+
                 @media (max-width: 900px) {
-                    .svc-layout {
-                        flex-direction: column;
-                        padding: 0 6vw;
-                        justify-content: center;
+                    .svc-body-inner {
+                        grid-template-columns: 1fr;
                     }
-                    .svc-image-wrap {
-                        width: 80vw;
-                        height: 30vh;
+
+                    .svc-grid {
+                        max-width: 420px;
+                        margin: 0 auto;
                     }
+
                     .svc-title {
-                        font-size: 30px;
+                        font-size: clamp(28px, 8vw, 40px);
                     }
                 }
             `}</style>
