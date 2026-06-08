@@ -1,0 +1,68 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Dancing+Script:wght@400;500&display=swap');
+
+@import "tailwindcss/preflight";
+@import "tailwindcss";
+@tailwind utilities;
+
+html {
+    scroll-behavior: auto;
+}
+
+body {
+    overflow-x: hidden;
+    background: #c8c8c8;
+}
+
+* {
+    box-sizing: border-box;
+}
+.hero-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    padding: 60px 62px 0 62px;
+}
+.hero-nav-links {
+    display: flex;
+    gap: 62px;
+    margin: 0 auto;
+    padding-right: 52px;
+}
+.hero-nav-links a {
+    font-family: "Francy", serif;
+    font-size: 30px;
+    font-weight: 400;
+    color: #ababab;
+    text-decoration: none;
+    letter-spacing: 0.025em;
+    transition: color 0.2s ease;
+}
+.hero-nav-links a:hover {
+    color: rgba(70, 70, 70, 1);
+}
+@media (max-width: 768px) {
+    .hero-nav {
+        padding: 20px 24px 0;
+    }
+
+    .hero-nav-links {
+        gap: 28px;
+        padding-right: 0;
+    }
+
+    .hero-nav-links a {
+        font-size: 13px;
+    }
+
+    .hero-script-word {
+        font-size: 40px;
+    }
+
+    .hero-static {
+        font-size: 16px;
+    }
+}
