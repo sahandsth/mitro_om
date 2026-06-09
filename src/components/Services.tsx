@@ -5,27 +5,28 @@ import Image from "next/image";
 
 export const SERVICES = [
     {
-        title: "Brand Strategy",
-        description:
-            "We craft purposeful brand strategies that align your vision with your audience — building a foundation that drives recognition, trust, and long-term growth.",
-        images: [
-            "https://picsum.photos/seed/brand1/600/450",
-            "https://picsum.photos/seed/brand2/600/450",
-            "https://picsum.photos/seed/brand3/600/450",
-            "https://picsum.photos/seed/brand4/600/450",
-        ],
-    },
-    {
         title: "Visual Identity",
         description:
             "From logo to color system, we design cohesive visual identities that speak your brand's language clearly and beautifully across every touchpoint.",
         images: [
-            "https://picsum.photos/seed/visual1/600/450",
-            "https://picsum.photos/seed/visual2/600/450",
-            "https://picsum.photos/seed/visual3/600/450",
-            "https://picsum.photos/seed/visual4/600/450",
+            "/images/services/VI/1.png",
+            "/images/services/VI/2.png",
+            "/images/services/VI/3.png",
+            "/images/services/VI/4.png",
         ],
     },
+    {
+        title: "Character Design",
+        description:
+            "We craft purposeful brand strategies that align your vision with your audience — building a foundation that drives recognition, trust, and long-term growth.",
+        images: [
+            "/images/services/CD/1.png",
+            "/images/services/CD/2.png",
+            "/images/services/CD/3.png",
+            "/images/services/CD/4.png",
+        ],
+    },
+
     {
         title: "Website",
         description:
