@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { scrollToSection } from "@/lib/scrollToSection";
 
 const NAV_LINKS = [
     { label: "Portfolio", id: "portfolio" },
@@ -8,22 +9,6 @@ const NAV_LINKS = [
     { label: "Contacts", id: "contacts" },
     { label: "Services", id: "services" },
 ];
-
-function scrollToSection(id: string) {
-    const el = document.getElementById(id);
-    if (!el) return;
-
-    const navH =
-        parseInt(
-            getComputedStyle(document.documentElement).getPropertyValue(
-                "--nav-h"
-            ),
-            10
-        ) || 110;
-
-    const top = el.getBoundingClientRect().top + window.scrollY - navH;
-    window.scrollTo({ top, behavior: "smooth" });
-}
 
 export default function Navbar() {
     return (

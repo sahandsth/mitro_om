@@ -27,7 +27,10 @@ const TEAM = [
     },
 ];
 
-const EASE = (t: number) => 1 - Math.pow(1 - t, 3);
+const EASE_OUT = (t: number) => 1 - Math.pow(1 - t, 3);
+const EASE_IN_OUT = (t: number) =>
+    t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 type CardLayout = {
@@ -54,8 +57,8 @@ export default function About() {
     const INTRO_VH = 0.5;
     const PEEL_VH = 1;
     const PEEL_HOLD = 0.38;
-    const ASSEMBLE_VH = 1.2;
-    const ASSEMBLE_ANIM = 0.48;
+    const ASSEMBLE_VH = 1.6;
+    const ASSEMBLE_ANIM = 0.92;
     const FINAL_HOLD_VH = 1.75;
     const REVEAL_VH = 1.25;
     const FOOTER_HOLD_VH = 0.9;
@@ -123,9 +126,7 @@ export default function About() {
                 const within = (peelProgress - idx * perPeel) / perPeel;
                 const animEnd = 1 - PEEL_HOLD;
                 const frac =
-                    within < animEnd
-                        ? EASE(within / animEnd)
-                        : 1;
+                    within < animEnd ? within / animEnd : 1;
                 setPeelIndex(idx);
                 setPeelFrac(frac);
                 setAssembleFrac(0);
@@ -141,7 +142,7 @@ export default function About() {
                     (scrolled - peelEnd) / (ASSEMBLE_VH * vh);
                 const frac =
                     within < ASSEMBLE_ANIM
-                        ? EASE(within / ASSEMBLE_ANIM)
+                        ? within / ASSEMBLE_ANIM
                         : 1;
                 setPeelIndex(TEAM.length - 1);
                 setPeelFrac(1);
@@ -168,7 +169,7 @@ export default function About() {
                 setPeelFrac(1);
                 setAssembleFrac(1);
                 const raw = (scrolled - finalHoldEnd) / (REVEAL_VH * vh);
-                setRevealFrac(EASE(raw));
+                setRevealFrac(EASE_OUT(raw));
                 return;
             }
 
@@ -193,15 +194,49 @@ export default function About() {
         h: Math.min(stageSize.h * 0.52, 340),
     });
 
-    const smallCardSize = () => ({
-        w: Math.min(stageSize.w * 0.068, 64),
-        h: Math.min(stageSize.h * 0.13, 96),
-    });
+    const dockRowMetrics = () => {
+        const gap = Math.max(8, stageSize.w * 0.01);
+        const padX = Math.max(56, stageSize.w * 0.07);
+        const padBottom = Math.max(80, stageSize.h * 0.12);
+        const maxRowW = stageSize.w - padX * 2;
+        const maxCardH = Math.floor(stageSize.h * 0.15);
 
-    const finalCardSize = () => ({
-        w: Math.min(stageSize.w * 0.26, 280),
-        h: Math.min(stageSize.h * 0.52, 380),
-    });
+        let cardW = Math.floor(
+            (maxRowW - (TEAM.length - 1) * gap) / TEAM.length
+        );
+        cardW = Math.min(cardW, 74);
+        cardW = Math.max(cardW, 50);
+
+        let cardH = Math.round(cardW * 1.28);
+        cardH = Math.min(cardH, maxCardH);
+
+        const totalW = TEAM.length * cardW + (TEAM.length - 1) * gap;
+        const startX = (stageSize.w - totalW) / 2;
+        const y = stageSize.h - padBottom - cardH;
+
+        return { cardW, cardH, gap, startX, y };
+    };
+
+    const finalRowMetrics = () => {
+        const gap = Math.max(14, stageSize.w * 0.02);
+        const marginX = Math.max(40, stageSize.w * 0.05);
+        const maxRowW = stageSize.w - marginX * 2;
+        let cardW = Math.min(stageSize.w * 0.25, 272);
+        let cardH = Math.min(stageSize.h * 0.46, 340);
+        const rawTotal = TEAM.length * cardW + (TEAM.length - 1) * gap;
+        const scale = rawTotal > maxRowW ? maxRowW / rawTotal : 1;
+        cardW *= scale;
+        cardH *= scale;
+
+        const totalW = TEAM.length * cardW + (TEAM.length - 1) * gap;
+        const startX = (stageSize.w - totalW) / 2;
+        const idealY = stageSize.h * 0.54 - cardH / 2;
+        const minY = stageSize.h * 0.24;
+        const maxY = stageSize.h - cardH - 40;
+        const y = Math.min(Math.max(idealY, minY), maxY);
+
+        return { cardW, cardH, gap, startX, y };
+    };
 
     const STACK_OFFSET_X = 26;
     const STACK_OFFSET_Y = 18;
@@ -221,46 +256,24 @@ export default function About() {
     };
 
     const getDockPos = (index: number): CardLayout => {
-        const { w: sw, h: sh } = smallCardSize();
-        const gap = 10;
-        const marginR = Math.max(32, stageSize.w * 0.05);
-        const marginB = 48;
-        const rightX = stageSize.w - marginR - sw;
+        const { cardW, cardH, gap, startX, y } = dockRowMetrics();
         return {
-            x: rightX - index * (sw + gap),
-            y: stageSize.h - marginB - sh,
-            width: sw,
-            height: sh,
+            x: startX + index * (cardW + gap),
+            y,
+            width: cardW,
+            height: cardH,
             zIndex: 8 + index,
             opacity: 1,
         };
     };
 
-    const getCenterRowPos = (index: number): CardLayout => {
-        const { w: sw, h: sh } = smallCardSize();
-        const gap = 14;
-        const totalW = TEAM.length * sw + (TEAM.length - 1) * gap;
-        const startX = (stageSize.w - totalW) / 2;
-        return {
-            x: startX + index * (sw + gap),
-            y: stageSize.h - sh - 72,
-            width: sw,
-            height: sh,
-            zIndex: 20 + index,
-            opacity: 1,
-        };
-    };
-
     const getFinalPos = (index: number): CardLayout => {
-        const { w: fw, h: fh } = finalCardSize();
-        const gap = Math.max(16, stageSize.w * 0.02);
-        const totalW = TEAM.length * fw + (TEAM.length - 1) * gap;
-        const startX = (stageSize.w - totalW) / 2;
+        const { cardW, cardH, gap, startX, y } = finalRowMetrics();
         return {
-            x: startX + index * (fw + gap),
-            y: stageSize.h * 0.5 - fh / 2,
-            width: fw,
-            height: fh,
+            x: startX + index * (cardW + gap),
+            y,
+            width: cardW,
+            height: cardH,
             zIndex: 20 + index,
             opacity: 1,
         };
@@ -281,12 +294,13 @@ export default function About() {
             if (i === peelIndex) {
                 const start = getStackPos(0);
                 const end = getDockPos(i);
-                const t = peelFrac;
+                const tPos = EASE_OUT(peelFrac);
+                const tSize = clamp01(EASE_IN_OUT(peelFrac) * 1.18);
                 return {
-                    x: lerp(start.x, end.x, t),
-                    y: lerp(start.y, end.y, t),
-                    width: lerp(start.width, end.width, t),
-                    height: lerp(start.height, end.height, t),
+                    x: lerp(start.x, end.x, tPos),
+                    y: lerp(start.y, end.y, tPos),
+                    width: lerp(start.width, end.width, tSize),
+                    height: lerp(start.height, end.height, tSize),
                     zIndex: 50,
                     opacity: 1,
                 };
@@ -311,28 +325,15 @@ export default function About() {
             }
 
             const dock = getDockPos(i);
-            const center = getCenterRowPos(i);
             const final = getFinalPos(i);
-            const t = assembleFrac;
+            const tPos = EASE_OUT(assembleFrac);
+            const tSize = clamp01(EASE_IN_OUT(assembleFrac) * 1.06);
 
-            if (t < 0.45) {
-                const local = t / 0.45;
-                return {
-                    x: lerp(dock.x, center.x, local),
-                    y: lerp(dock.y, center.y, local),
-                    width: lerp(dock.width, center.width, local),
-                    height: lerp(dock.height, center.height, local),
-                    zIndex: 20 + i,
-                    opacity: 1,
-                };
-            }
-
-            const local = (t - 0.45) / 0.55;
             return {
-                x: lerp(center.x, final.x, local),
-                y: lerp(center.y, final.y, local),
-                width: lerp(center.width, final.width, local),
-                height: lerp(center.height, final.height, local),
+                x: lerp(dock.x, final.x, tPos),
+                y: lerp(dock.y, final.y, tPos),
+                width: lerp(dock.width, final.width, tSize),
+                height: lerp(dock.height, final.height, tSize),
                 zIndex: 20 + i,
                 opacity: 1,
             };
@@ -341,10 +342,31 @@ export default function About() {
         return null;
     };
 
+    const getFullContentOpacity = (cardIndex: number) => {
+        if (phase === "intro") return 1;
+        if (phase === "final" || phase === "reveal" || phase === "revealed") {
+            return 1;
+        }
+
+        if (phase === "peel") {
+            if (cardIndex < peelIndex) return 0;
+            if (cardIndex === peelIndex) {
+                return 1 - clamp01((peelFrac - 0.42) / 0.38);
+            }
+            return 1;
+        }
+
+        if (phase === "assemble") {
+            return clamp01((assembleFrac - 0.42) / 0.38);
+        }
+
+        return 1;
+    };
+
     const textOpacity = () => {
         if (phase === "intro" || phase === "peel") return 1;
-        if (assembleFrac < 0.55) return 1;
-        return Math.max(0, 1 - (assembleFrac - 0.55) / 0.35);
+        if (assembleFrac < 0.35) return 1;
+        return Math.max(0, 1 - (assembleFrac - 0.35) / 0.4);
     };
 
     const textCentered =
@@ -352,19 +374,10 @@ export default function About() {
         phase === "final";
     const isRevealPhase = phase === "reveal" || phase === "revealed";
 
-    const REVEAL_SLIDE_Y = 58;
-    const REVEAL_SLIDE_X = 5;
-    const REVEAL_DIAGONAL = 24;
-
-    const panelClip =
-        revealFrac <= 0
-            ? "none"
-            : `polygon(0 0, 100% 0, 100% ${(100 - revealFrac * REVEAL_DIAGONAL).toFixed(1)}%, 0 100%)`;
-
     const panelTransform =
         revealFrac <= 0
             ? "none"
-            : `translate(${revealFrac * REVEAL_SLIDE_X}%, ${-revealFrac * REVEAL_SLIDE_Y}%)`;
+            : `translate3d(${revealFrac * 1.5}%, ${-revealFrac * 72}%, 0) skewY(${-(revealFrac * 14).toFixed(2)}deg)`;
 
     return (
         <div
@@ -372,25 +385,40 @@ export default function About() {
             ref={wrapperRef}
             style={{ height: `${totalVh * 100}vh`, position: "relative" }}
         >
+            <div
+                id="about-entry"
+                aria-hidden="true"
+                style={{
+                    position: "absolute",
+                    top: `${INTRO_VH * 100}vh`,
+                    width: 0,
+                    height: 0,
+                    pointerEvents: "none",
+                }}
+            />
+            <div
+                id="contacts-entry"
+                aria-hidden="true"
+                style={{
+                    position: "absolute",
+                    bottom: 0,
+                    width: 0,
+                    height: 0,
+                    pointerEvents: "none",
+                }}
+            />
             <div className="ab-sticky">
                 <Footer />
 
                 <div
                     className={`ab-panel ${isRevealPhase ? "ab-panel--reveal" : ""}`}
-                    style={{
-                        transform: panelTransform,
-                        clipPath: panelClip,
-                    }}
+                    style={{ transform: panelTransform }}
                 >
                 <div className="ab-bg" />
 
                 <div
                     className={`ab-text ${textCentered ? "ab-text--centered" : ""}`}
-                    style={{
-                        opacity: isRevealPhase
-                            ? 0
-                            : textOpacity(),
-                    }}
+                    style={{ opacity: textOpacity() }}
                 >
                     <h2 className="ab-title">About Us</h2>
                     <p className="ab-desc">
@@ -416,9 +444,7 @@ export default function About() {
                         const layout = getCardLayout(i);
                         if (!layout) return null;
 
-                        const isCompact =
-                            layout.height <
-                            stackCardSize().h * 0.55;
+                        const fullOpacity = getFullContentOpacity(i);
                         const isPeeling =
                             phase === "peel" &&
                             i === peelIndex &&
@@ -434,19 +460,20 @@ export default function About() {
                                     width: layout.width,
                                     height: layout.height,
                                     zIndex: layout.zIndex,
-                                    opacity: isRevealPhase
-                                        ? Math.max(0, 1 - revealFrac * 4)
-                                        : layout.opacity,
+                                    opacity: layout.opacity,
                                 }}
                             >
                                 <div
                                     className="ab-card-inner"
                                     style={{ background: member.tone }}
                                 >
-                                    <div
-                                        className={`ab-card-content ${isCompact ? "ab-card-content--compact" : "ab-card-content--full"}`}
-                                    >
-                                        {isCompact ? (
+                                    <div className="ab-card-content-stack">
+                                        <div
+                                            className="ab-card-content ab-card-content--compact"
+                                            style={{
+                                                opacity: 1 - fullOpacity,
+                                            }}
+                                        >
                                             <h3
                                                 className="ab-card-name ab-card-name--compact"
                                                 style={{
@@ -455,26 +482,28 @@ export default function About() {
                                             >
                                                 {member.name}
                                             </h3>
-                                        ) : (
-                                            <>
-                                                <div className="ab-card-head">
-                                                    <span className="ab-card-role">
-                                                        {member.role}
-                                                    </span>
-                                                    <h3 className="ab-card-name">
-                                                        {member.name}
-                                                    </h3>
-                                                </div>
-                                                <p className="ab-card-bio">
-                                                    {member.bio}
-                                                </p>
-                                                <ul className="ab-card-skills">
-                                                    {member.skills.map((s) => (
-                                                        <li key={s}>{s}</li>
-                                                    ))}
-                                                </ul>
-                                            </>
-                                        )}
+                                        </div>
+                                        <div
+                                            className="ab-card-content ab-card-content--full"
+                                            style={{ opacity: fullOpacity }}
+                                        >
+                                            <div className="ab-card-head">
+                                                <span className="ab-card-role">
+                                                    {member.role}
+                                                </span>
+                                                <h3 className="ab-card-name">
+                                                    {member.name}
+                                                </h3>
+                                            </div>
+                                            <p className="ab-card-bio">
+                                                {member.bio}
+                                            </p>
+                                            <ul className="ab-card-skills">
+                                                {member.skills.map((s) => (
+                                                    <li key={s}>{s}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -496,15 +525,19 @@ export default function About() {
 
                 .ab-panel {
                     position: absolute;
-                    inset: 0;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
                     z-index: 10;
-                    min-height: 100%;
+                    min-height: 115%;
                     background: #c4c4c4;
-                    will-change: transform, clip-path;
+                    transform-origin: 50% 100%;
+                    will-change: transform;
                 }
 
                 .ab-panel--reveal {
-                    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+                    box-shadow: 0 28px 72px rgba(0, 0, 0, 0.22);
                 }
 
                 .ab-bg {
@@ -587,9 +620,27 @@ export default function About() {
                     isolation: isolate;
                 }
 
+                .ab-card-content-stack {
+                    position: relative;
+                    width: 100%;
+                    height: 100%;
+                }
+
                 .ab-card-content {
                     padding: clamp(10px, 2vw, 20px);
                     color: #ffffff;
+                }
+
+                .ab-card-content--compact {
+                    position: absolute;
+                    inset: 0;
+                    pointer-events: none;
+                }
+
+                .ab-card-content--full {
+                    position: absolute;
+                    inset: 0;
+                    pointer-events: none;
                 }
 
                 .ab-card-content--full {

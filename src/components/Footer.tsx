@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { scrollToSection } from "@/lib/scrollToSection";
 
 const EXPLORE_LINKS = [
     { label: "Portfolio", id: "portfolio" },
@@ -16,20 +17,6 @@ const SOCIAL_LINKS = [
     { label: "Tiktok", href: "https://tiktok.com" },
 ];
 
-function scrollToSection(id: string) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const navH =
-        parseInt(
-            getComputedStyle(document.documentElement).getPropertyValue(
-                "--nav-h"
-            ),
-            10
-        ) || 110;
-    const top = el.getBoundingClientRect().top + window.scrollY - navH;
-    window.scrollTo({ top, behavior: "smooth" });
-}
-
 export default function Footer() {
     return (
         <footer id="contacts" className="ft">
@@ -37,11 +24,11 @@ export default function Footer() {
                 MITRO AGENCY
             </p>
 
-            <div className="ft-inner">
-                <div className="ft-content">
-                    <div className="ft-grid">
-                        <div className="ft-col">
-                            <h3 className="ft-heading">Reach out</h3>
+            <div className="ft-shell">
+                <div className="ft-columns">
+                    <div className="ft-col">
+                        <h3 className="ft-heading">Reach out</h3>
+                        <nav className="ft-nav">
                             <a
                                 className="ft-link"
                                 href="mailto:mitro.agency@gmail.com"
@@ -51,59 +38,58 @@ export default function Footer() {
                             <a className="ft-link" href="tel:+96892086094">
                                 +968 9208 6094
                             </a>
-                        </div>
-
-                        <div className="ft-col">
-                            <h3 className="ft-heading">Explore</h3>
-                            <nav className="ft-nav">
-                                {EXPLORE_LINKS.map(({ label, id }) => (
-                                    <button
-                                        key={id}
-                                        type="button"
-                                        className="ft-nav-btn"
-                                        onClick={() => scrollToSection(id)}
-                                    >
-                                        {label}
-                                    </button>
-                                ))}
-                            </nav>
-                        </div>
-
-                        <div className="ft-col ft-col--social">
-                            <h3 className="ft-heading">Social</h3>
-                            <div className="ft-social-row">
-                                <nav className="ft-nav">
-                                    {SOCIAL_LINKS.map(({ label, href }) => (
-                                        <a
-                                            key={label}
-                                            className="ft-link"
-                                            href={href}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                        >
-                                            {label}
-                                        </a>
-                                    ))}
-                                </nav>
-                                <div className="ft-logo">
-                                    <Image
-                                        src="/Logo.png"
-                                        alt="Mitro Agency"
-                                        width={48}
-                                        height={48}
-                                        className="ft-logo-img"
-                                    />
-                                </div>
-                            </div>
-                        </div>
+                        </nav>
                     </div>
 
-                    <div className="ft-bottom">
-                        <span className="ft-cta">Lets Work Together</span>
-                        <span className="ft-credits">
-                            Mitro Agency 2026 / Oman / Site Credits
-                        </span>
+                    <div className="ft-col">
+                        <h3 className="ft-heading">Explore</h3>
+                        <nav className="ft-nav">
+                            {EXPLORE_LINKS.map(({ label, id }) => (
+                                <button
+                                    key={id}
+                                    type="button"
+                                    className="ft-nav-btn"
+                                    onClick={() => scrollToSection(id)}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </nav>
                     </div>
+
+                    <div className="ft-col">
+                        <h3 className="ft-heading">Social</h3>
+                        <nav className="ft-nav">
+                            {SOCIAL_LINKS.map(({ label, href }) => (
+                                <a
+                                    key={label}
+                                    className="ft-link"
+                                    href={href}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    {label}
+                                </a>
+                            ))}
+                        </nav>
+                    </div>
+
+                    <div className="ft-logo">
+                        <Image
+                            src="/Logo.png"
+                            alt="Mitro Agency"
+                            width={56}
+                            height={56}
+                            className="ft-logo-img"
+                        />
+                    </div>
+                </div>
+
+                <div className="ft-bottom">
+                    <span className="ft-cta">Lets Work Together</span>
+                    <span className="ft-credits">
+                        Mitro Agency 2026 / Oman / Site Credits
+                    </span>
                 </div>
             </div>
 
@@ -116,35 +102,17 @@ export default function Footer() {
                     color: #ffffff;
                     z-index: 0;
                     overflow: hidden;
-                    box-sizing: border-box;
-                }
-
-                .ft-inner {
-                    position: absolute;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    z-index: 2;
-                    box-sizing: border-box;
-                    padding: 0 clamp(28px, 5vw, 72px)
-                        clamp(24px, 4vh, 40px);
-                }
-
-                .ft-content {
-                    display: flex;
-                    flex-direction: column;
-                    gap: clamp(20px, 3vh, 36px);
                 }
 
                 .ft-watermark {
                     position: absolute;
                     left: 50%;
-                    bottom: clamp(80px, 14vh, 160px);
-                    transform: translateX(-50%);
+                    top: 42%;
+                    transform: translate(-50%, -50%);
                     font-family: "Francy", serif;
-                    font-size: clamp(52px, 10vw, 140px);
+                    font-size: clamp(64px, 12.5vw, 180px);
                     font-weight: 400;
-                    color: rgba(255, 255, 255, 0.05);
+                    color: rgba(255, 255, 255, 0.045);
                     letter-spacing: -0.02em;
                     white-space: nowrap;
                     margin: 0;
@@ -153,32 +121,55 @@ export default function Footer() {
                     z-index: 1;
                 }
 
-                .ft-grid {
+                .ft-shell {
+                    position: relative;
+                    z-index: 2;
+                    height: 100%;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: flex-end;
+                    padding: 0 62px clamp(24px, 3.8vh, 40px);
+                    box-sizing: border-box;
+                }
+
+                .ft-columns {
                     display: grid;
-                    grid-template-columns: repeat(3, 1fr);
-                    gap: clamp(20px, 3vw, 48px);
-                    align-items: end;
+                    grid-template-columns:
+                        minmax(0, 1.35fr) minmax(0, 0.75fr) minmax(0, 0.75fr)
+                        auto;
+                    column-gap: clamp(56px, 7.5vw, 112px);
+                    row-gap: 24px;
+                    align-items: start;
+                    width: 100%;
+                    margin-bottom: clamp(40px, 7.5vh, 88px);
+                }
+
+                .ft-col {
+                    min-width: 0;
                 }
 
                 .ft-heading {
                     font-family: "Francy", serif;
-                    font-size: clamp(16px, 1.8vw, 24px);
+                    font-size: clamp(18px, 1.7vw, 26px);
                     font-weight: 400;
-                    margin: 0 0 clamp(10px, 1.5vh, 18px);
+                    margin: 0 0 clamp(16px, 2.2vh, 24px);
                     letter-spacing: 0.01em;
+                    line-height: 1;
+                    min-height: 1em;
                 }
 
                 .ft-nav {
                     display: flex;
                     flex-direction: column;
-                    gap: clamp(5px, 0.9vh, 10px);
+                    gap: clamp(7px, 1.1vh, 12px);
                 }
 
                 .ft-link,
                 .ft-nav-btn {
                     font-family: "Francy", serif;
-                    font-size: clamp(13px, 1.1vw, 17px);
-                    color: rgba(255, 255, 255, 0.88);
+                    font-size: clamp(13px, 1.05vw, 17px);
+                    font-weight: 400;
+                    color: rgba(255, 255, 255, 0.82);
                     text-decoration: none;
                     background: none;
                     border: none;
@@ -186,8 +177,8 @@ export default function Footer() {
                     text-align: left;
                     cursor: pointer;
                     transition: color 0.2s ease;
-                    letter-spacing: 0.02em;
-                    line-height: 1.35;
+                    letter-spacing: 0.015em;
+                    line-height: 1.4;
                 }
 
                 .ft-link:hover,
@@ -195,72 +186,88 @@ export default function Footer() {
                     color: #ffffff;
                 }
 
-                .ft-social-row {
-                    display: flex;
-                    align-items: flex-end;
-                    gap: clamp(16px, 2.5vw, 40px);
-                }
-
                 .ft-logo {
-                    flex-shrink: 0;
+                    justify-self: end;
+                    align-self: start;
+                    margin-left: clamp(16px, 2vw, 40px);
                     opacity: 0.95;
                 }
 
                 .ft-logo :global(.ft-logo-img) {
                     filter: brightness(0) invert(1);
+                    display: block;
                 }
 
                 .ft-bottom {
                     display: flex;
                     justify-content: space-between;
                     align-items: flex-end;
-                    gap: 20px;
-                    border-top: 1px solid rgba(255, 255, 255, 0.06);
-                    padding-top: clamp(14px, 2vh, 22px);
+                    gap: 24px;
+                    width: 100%;
                 }
 
                 .ft-cta,
                 .ft-credits {
                     font-family: "Francy", serif;
-                    font-size: clamp(12px, 1vw, 15px);
-                    color: rgba(255, 255, 255, 0.9);
+                    font-size: clamp(12px, 0.95vw, 15px);
+                    color: rgba(255, 255, 255, 0.88);
                     letter-spacing: 0.02em;
                     line-height: 1.4;
                 }
 
                 .ft-credits {
-                    color: rgba(255, 255, 255, 0.55);
+                    color: rgba(255, 255, 255, 0.5);
                     text-align: right;
                 }
 
-                @media (max-height: 820px) {
-                    .ft-inner {
-                        padding-bottom: 18px;
+                @media (max-height: 800px) {
+                    .ft-columns {
+                        margin-bottom: clamp(32px, 6vh, 56px);
                     }
 
                     .ft-watermark {
-                        font-size: clamp(40px, 8vw, 90px);
-                        bottom: clamp(60px, 10vh, 100px);
-                    }
-
-                    .ft-content {
-                        gap: 16px;
-                    }
-
-                    .ft-heading {
-                        margin-bottom: 8px;
+                        font-size: clamp(48px, 10vw, 120px);
+                        top: 44%;
                     }
                 }
 
-                @media (max-width: 768px) {
-                    .ft-grid {
+                @media (max-width: 900px) {
+                    .ft-shell {
+                        padding-left: clamp(24px, 5vw, 48px);
+                        padding-right: clamp(24px, 5vw, 48px);
+                    }
+
+                    .ft-columns {
+                        grid-template-columns: 1fr 1fr;
+                        gap: 32px 24px;
+                    }
+
+                    .ft-logo {
+                        grid-column: 2;
+                        grid-row: 1;
+                        justify-self: end;
+                    }
+
+                    .ft-col:nth-child(3) {
+                        grid-column: 1;
+                    }
+                }
+
+                @media (max-width: 560px) {
+                    .ft-columns {
                         grid-template-columns: 1fr;
-                        gap: 24px;
+                    }
+
+                    .ft-logo {
+                        grid-column: 1;
+                        grid-row: auto;
+                        justify-self: start;
                     }
 
                     .ft-bottom {
                         flex-direction: column;
                         align-items: flex-start;
+                        gap: 12px;
                     }
 
                     .ft-credits {

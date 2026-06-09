@@ -447,6 +447,17 @@ export default function Portfolio() {
                 ref={wrapperRef}
                 style={{ height: `${totalVh * 100}vh`, position: "relative" }}
             >
+                <div
+                    id="portfolio-entry"
+                    aria-hidden="true"
+                    style={{
+                        position: "absolute",
+                        top: `${INTRO_VH * 100}vh`,
+                        width: 0,
+                        height: 0,
+                        pointerEvents: "none",
+                    }}
+                />
                 <div className="pf-sticky">
                     <div className="pf-bg" />
 

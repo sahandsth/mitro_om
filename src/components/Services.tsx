@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
 
-const SERVICES = [
+export const SERVICES = [
     {
         title: "Brand Strategy",
         description:
@@ -48,71 +48,141 @@ const SERVICES = [
             "https://picsum.photos/seed/content4/600/450",
         ],
     },
+    {
+        title: "Social Media",
+        description:
+            "We build consistent social presence with content systems, campaign direction, and platform-native storytelling that keeps your brand top of mind.",
+        images: [
+            "https://picsum.photos/seed/social1/600/450",
+            "https://picsum.photos/seed/social2/600/450",
+            "https://picsum.photos/seed/social3/600/450",
+            "https://picsum.photos/seed/social4/600/450",
+        ],
+    },
+    {
+        title: "Motion Design",
+        description:
+            "From subtle UI motion to full brand films, we design movement that adds rhythm, clarity, and emotion to every digital experience.",
+        images: [
+            "https://picsum.photos/seed/motion1/600/450",
+            "https://picsum.photos/seed/motion2/600/450",
+            "https://picsum.photos/seed/motion3/600/450",
+            "https://picsum.photos/seed/motion4/600/450",
+        ],
+    },
+    {
+        title: "Photography",
+        description:
+            "Art-directed photography for campaigns, products, and brand worlds — crafted to feel authentic, polished, and unmistakably yours.",
+        images: [
+            "https://picsum.photos/seed/photo1/600/450",
+            "https://picsum.photos/seed/photo2/600/450",
+            "https://picsum.photos/seed/photo3/600/450",
+            "https://picsum.photos/seed/photo4/600/450",
+        ],
+    },
 ];
+
+const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
+const smoothstep = (t: number) => {
+    const x = clamp01(t);
+    return x * x * (3 - 2 * x);
+};
+
+const OVERVIEW_VH = 0.55;
+const SERVICE_VH = 1;
+const TAIL_VH = 0.6;
+const OPEN_AT = 0.58;
+
+function openAmount(within: number) {
+    if (within < 0.18) return smoothstep(within / 0.18);
+    if (within > 0.82) return smoothstep((1 - within) / 0.18);
+    return 1;
+}
+
+function serviceScrollTop(wrapper: HTMLElement, index: number) {
+    const vh = window.innerHeight;
+    const overviewEnd = OVERVIEW_VH * vh;
+    const perService = SERVICE_VH * vh;
+    const totalVh =
+        OVERVIEW_VH + SERVICES.length * SERVICE_VH + TAIL_VH;
+    const ideal =
+        wrapper.offsetTop +
+        overviewEnd +
+        index * perService +
+        perService * OPEN_AT;
+    const maxTop = wrapper.offsetTop + (totalVh - 1) * vh;
+    return Math.min(ideal, maxTop);
+}
 
 export default function ServicesSection() {
     const wrapperRef = useRef<HTMLDivElement>(null);
-    const listRef = useRef<HTMLDivElement>(null);
-    const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+    const [mode, setMode] = useState<"overview" | "detail">("overview");
+    const [activeIndex, setActiveIndex] = useState(0);
+    const [openFrac, setOpenFrac] = useState(0);
+    const [introReady, setIntroReady] = useState(false);
+    const introPlayed = useRef(false);
 
-    const [openIndex, setOpenIndex] = useState(-1);
-    const [introVisible, setIntroVisible] = useState(false);
-    const [listOffset, setListOffset] = useState(0);
+    const totalVh =
+        OVERVIEW_VH + SERVICES.length * SERVICE_VH + TAIL_VH;
 
-    const INTRO_VH = 0.15;
-    const SERVICE_VH = 1;
+    const scrollToService = useCallback((index: number, smooth = true) => {
+        const wrapper = wrapperRef.current;
+        if (!wrapper) return;
 
-    const totalVh = INTRO_VH + SERVICES.length * SERVICE_VH + 0.4;
+        window.scrollTo({
+            top: serviceScrollTop(wrapper, index),
+            behavior: smooth ? "smooth" : "auto",
+        });
+    }, []);
 
-    const computeOffset = (idx: number) => {
-        const list = listRef.current;
-        const item = itemRefs.current[idx];
-        if (!list || !item) return 0;
+    const playIntro = useCallback(() => {
+        if (introPlayed.current) return;
+        introPlayed.current = true;
+        requestAnimationFrame(() => setIntroReady(true));
+    }, []);
 
-        const listRect = list.getBoundingClientRect();
-        const itemRect = item.getBoundingClientRect();
-        const listCenter = listRect.top + listRect.height / 2;
-        const itemCenter = itemRect.top + itemRect.height / 2;
-
-        return listCenter - itemCenter;
-    };
+    useLayoutEffect(() => {
+        const wrapper = wrapperRef.current;
+        if (!wrapper) return;
+        if (-wrapper.getBoundingClientRect().top >= 0) playIntro();
+    }, [playIntro]);
 
     useEffect(() => {
         const handleScroll = () => {
             const wrapper = wrapperRef.current;
             if (!wrapper) return;
 
-            const wrapperTop = wrapper.getBoundingClientRect().top;
-            const scrolled = -wrapperTop;
+            const scrolled = -wrapper.getBoundingClientRect().top;
             const vh = window.innerHeight;
+            const overviewEnd = OVERVIEW_VH * vh;
+            const perService = SERVICE_VH * vh;
 
             if (scrolled < 0) {
-                setIntroVisible(false);
-                setOpenIndex(-1);
-                setListOffset(0);
+                setMode("overview");
+                setOpenFrac(0);
                 return;
             }
 
-            const introEnd = vh * INTRO_VH;
+            playIntro();
 
-            if (scrolled < introEnd) {
-                setIntroVisible(true);
-                setOpenIndex(-1);
-                setListOffset(0);
+            if (scrolled < overviewEnd) {
+                setMode("overview");
+                setOpenFrac(0);
                 return;
             }
 
-            setIntroVisible(true);
-
-            const phaseProgress = scrolled - introEnd;
-            const perService = SERVICE_VH * vh;
-            const floatIdx = phaseProgress / perService;
+            setMode("detail");
+            const detailProgress = scrolled - overviewEnd;
+            const floatIdx = detailProgress / perService;
             const idx = Math.min(
                 Math.floor(floatIdx),
                 SERVICES.length - 1
             );
+            const within = Math.min(floatIdx - idx, 1);
 
-            setOpenIndex(idx);
+            setActiveIndex(idx);
+            setOpenFrac(openAmount(within));
         };
 
         window.addEventListener("scroll", handleScroll, { passive: true });
@@ -122,82 +192,93 @@ export default function ServicesSection() {
             window.removeEventListener("scroll", handleScroll);
             window.removeEventListener("resize", handleScroll);
         };
-    }, []);
+    }, [playIntro]);
 
-    useLayoutEffect(() => {
-        if (openIndex < 0) {
-            setListOffset(0);
-            return;
-        }
-        setListOffset(computeOffset(openIndex));
-    }, [openIndex]);
+    const isOverview = mode === "overview";
+    const active = SERVICES[activeIndex];
 
     return (
-        <>
-            <style>{`
-        @font-face {
-          font-family: 'Francy';
-          src: url('/fonts/Francy.otf') format('opentype');
-          font-weight: normal;
-          font-style: normal;
-          font-display: swap;
-        }
-      `}</style>
-
+        <div
+            ref={wrapperRef}
+            style={{ height: `${totalVh * 100}vh`, position: "relative" }}
+        >
             <div
                 id="services"
-                ref={wrapperRef}
-                style={{ height: `${totalVh * 100}vh`, position: "relative" }}
-            >
-                <div className="svc-sticky">
-                    <div className="svc-bg" />
+                aria-hidden="true"
+                style={{
+                    position: "absolute",
+                    top: 0,
+                    width: 0,
+                    height: 0,
+                    pointerEvents: "none",
+                }}
+            />
+            <div className="svc-sticky">
+                <div className="svc-bg" />
 
-                    <div
-                        ref={listRef}
-                        className="svc-list"
-                        style={{ transform: `translateY(${listOffset}px)` }}
+                <div
+                    className={`svc-shell ${isOverview ? "svc-shell--overview" : "svc-shell--detail"}`}
+                >
+                    <nav
+                        className={`svc-menu ${introReady ? "svc-menu--intro" : ""}`}
+                        aria-label="Services"
                     >
                         {SERVICES.map((svc, i) => {
-                            const isOpen = openIndex === i;
-                            const isPast = openIndex > i;
+                            const isActive =
+                                !isOverview && activeIndex === i;
+                            const focus = isOverview
+                                ? 0.32
+                                : isActive
+                                  ? 1
+                                  : 0.24;
 
                             return (
-                                <div
+                                <button
                                     key={svc.title}
-                                    ref={(el) => {
-                                        itemRefs.current[i] = el;
+                                    type="button"
+                                    className={`svc-menu-btn ${isActive ? "svc-menu-btn--active" : ""}`}
+                                    onClick={() => scrollToService(i)}
+                                    style={{
+                                        color: `rgba(255,255,255,${focus})`,
                                     }}
-                                    className={`svc-item
-                                        ${introVisible ? "svc-item--visible" : ""}
-                                        ${isOpen ? "svc-item--open" : ""}
-                                        ${isPast ? "svc-item--past" : ""}
-                                    `}
                                 >
-                                    <div className="svc-title-row">
-                                        <span className="svc-title">{svc.title}</span>
-                                    </div>
-
-                                    <div className="svc-body">
-                                        <div className="svc-body-inner">
-                                            <p className="svc-desc">{svc.description}</p>
-                                            <div className="svc-grid">
-                                                {svc.images.map((src, j) => (
-                                                    <div key={j} className="svc-grid-cell">
-                                                        <Image
-                                                            src={src}
-                                                            alt=""
-                                                            fill
-                                                            sizes="(max-width: 900px) 45vw, 22vw"
-                                                            style={{ objectFit: "cover" }}
-                                                        />
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                                    <span className="svc-menu-label">
+                                        {svc.title}
+                                    </span>
+                                </button>
                             );
                         })}
+                    </nav>
+
+                    <div
+                        className="svc-detail"
+                        style={{
+                            opacity: isOverview ? 0 : openFrac,
+                            pointerEvents:
+                                !isOverview && openFrac > 0.5
+                                    ? "auto"
+                                    : "none",
+                        }}
+                    >
+                        <div
+                            key={activeIndex}
+                            className="svc-panel"
+                        >
+                            <p className="svc-desc">{active.description}</p>
+                            <div className="svc-grid">
+                                {active.images.map((src, j) => (
+                                    <div key={j} className="svc-grid-cell">
+                                        <Image
+                                            src={src}
+                                            alt=""
+                                            fill
+                                            sizes="(max-width: 900px) 45vw, 22vw"
+                                            style={{ objectFit: "cover" }}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -211,7 +292,6 @@ export default function ServicesSection() {
                     overflow: hidden;
                     display: flex;
                     align-items: center;
-                    justify-content: center;
                 }
 
                 .svc-bg {
@@ -221,80 +301,133 @@ export default function ServicesSection() {
                     z-index: 0;
                 }
 
-                .svc-list {
+                .svc-shell {
                     position: relative;
                     z-index: 10;
-                    width: min(92vw, 1180px);
+                    width: 100%;
+                    height: 100%;
+                    display: grid;
+                    align-items: center;
+                    padding: calc(var(--nav-h, 110px) + 12px) 62px
+                        clamp(24px, 4vh, 48px);
+                    box-sizing: border-box;
+                    transition: grid-template-columns 0.45s
+                        cubic-bezier(0.22, 1, 0.36, 1);
+                }
+
+                .svc-shell--overview {
+                    grid-template-columns: 1fr;
+                }
+
+                .svc-shell--detail {
+                    grid-template-columns: minmax(200px, 0.95fr) minmax(
+                            0,
+                            1.35fr
+                        );
+                    gap: clamp(28px, 4vw, 64px);
+                }
+
+                .svc-menu {
                     display: flex;
                     flex-direction: column;
-                    align-items: center;
-                    padding-top: calc(var(--nav-h, 110px) * 0.35);
-                }
-
-                .svc-item {
+                    align-items: flex-start;
+                    gap: clamp(6px, 1.1vh, 12px);
                     width: 100%;
-                    overflow: hidden;
-                    opacity: 0;
-                    transform: translateY(32px);
+                }
+
+                .svc-shell--detail .svc-menu {
+                    gap: clamp(4px, 0.8vh, 9px);
+                }
+
+                .svc-menu-btn {
+                    display: block;
+                    width: 100%;
+                    background: none;
+                    border: none;
+                    padding: clamp(4px, 0.65vh, 8px) 0;
+                    cursor: pointer;
+                    text-align: left;
+                    transform: translate3d(0, 7px, 0);
                     transition:
-                        opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
-                        transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+                        color 0.3s ease,
+                        transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
                 }
 
-                .svc-item--visible {
-                    opacity: 1;
-                    transform: translateY(0);
+                .svc-menu--intro .svc-menu-btn {
+                    transform: translate3d(0, 0, 0);
                 }
 
-                .svc-title-row {
-                    display: flex;
-                    justify-content: center;
-                    padding: clamp(10px, 1.6vh, 18px) 0;
-                    text-align: center;
+                .svc-menu--intro .svc-menu-btn:nth-child(1) {
+                    transition-delay: 0.03s;
+                }
+                .svc-menu--intro .svc-menu-btn:nth-child(2) {
+                    transition-delay: 0.06s;
+                }
+                .svc-menu--intro .svc-menu-btn:nth-child(3) {
+                    transition-delay: 0.09s;
+                }
+                .svc-menu--intro .svc-menu-btn:nth-child(4) {
+                    transition-delay: 0.12s;
+                }
+                .svc-menu--intro .svc-menu-btn:nth-child(5) {
+                    transition-delay: 0.15s;
+                }
+                .svc-menu--intro .svc-menu-btn:nth-child(6) {
+                    transition-delay: 0.18s;
+                }
+                .svc-menu--intro .svc-menu-btn:nth-child(7) {
+                    transition-delay: 0.21s;
                 }
 
-                .svc-title {
+                .svc-menu-label {
                     font-family: "Francy", serif;
-                    font-size: clamp(36px, 5.5vw, 72px);
                     font-weight: 400;
-                    color: rgba(255, 255, 255, 0.14);
                     letter-spacing: -0.02em;
-                    line-height: 1.05;
-                    transition: color 0.25s ease;
+                    line-height: 1.12;
+                    transition: font-size 0.45s
+                        cubic-bezier(0.22, 1, 0.36, 1);
                 }
 
-                .svc-item--open .svc-title {
-                    color: #ffffff;
+                .svc-shell--overview .svc-menu-label {
+                    font-size: clamp(24px, 3.2vw, 44px);
                 }
 
-                .svc-item--past .svc-title {
-                    color: rgba(255, 255, 255, 0.14);
+                .svc-shell--detail .svc-menu-label {
+                    font-size: clamp(18px, 1.75vw, 30px);
                 }
 
-                .svc-body {
+                .svc-menu-btn:hover {
+                    color: rgba(255, 255, 255, 0.55) !important;
+                }
+
+                .svc-menu-btn--active:hover {
+                    color: rgba(255, 255, 255, 1) !important;
+                }
+
+                .svc-detail {
+                    position: relative;
+                    min-height: clamp(240px, 36vh, 400px);
+                    transition: opacity 0.28s ease;
+                }
+
+                .svc-panel {
                     display: grid;
-                    grid-template-rows: 0fr;
-                }
-
-                .svc-item--open .svc-body {
-                    grid-template-rows: 1fr;
-                }
-
-                .svc-body-inner {
-                    overflow: hidden;
-                    display: grid;
-                    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
-                    gap: clamp(20px, 3vw, 48px);
+                    grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr);
+                    gap: clamp(20px, 3vw, 44px);
                     align-items: start;
-                    justify-content: center;
-                    max-width: 960px;
-                    margin: 0 auto;
-                    padding-bottom: clamp(16px, 2.5vh, 32px);
-                    opacity: 0;
+                    animation: svcPanelIn 0.38s
+                        cubic-bezier(0.22, 1, 0.36, 1) both;
                 }
 
-                .svc-item--open .svc-body-inner {
-                    opacity: 1;
+                @keyframes svcPanelIn {
+                    from {
+                        opacity: 0;
+                        transform: translateY(12px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
                 }
 
                 .svc-desc {
@@ -305,7 +438,7 @@ export default function ServicesSection() {
                     line-height: 1.75;
                     margin: 0;
                     padding-top: 4px;
-                    text-align: center;
+                    text-align: left;
                 }
 
                 .svc-grid {
@@ -338,20 +471,37 @@ export default function ServicesSection() {
                 }
 
                 @media (max-width: 900px) {
-                    .svc-body-inner {
+                    .svc-shell {
+                        padding-left: clamp(24px, 5vw, 48px);
+                        padding-right: clamp(24px, 5vw, 48px);
+                    }
+
+                    .svc-shell--detail {
+                        grid-template-columns: 1fr;
+                        gap: 20px;
+                        align-content: start;
+                        overflow-y: auto;
+                    }
+
+                    .svc-shell--detail .svc-menu {
+                        flex-direction: row;
+                        flex-wrap: wrap;
+                        gap: 8px 14px;
+                    }
+
+                    .svc-shell--detail .svc-menu-btn {
+                        width: auto;
+                    }
+
+                    .svc-panel {
                         grid-template-columns: 1fr;
                     }
 
                     .svc-grid {
                         max-width: 420px;
-                        margin: 0 auto;
-                    }
-
-                    .svc-title {
-                        font-size: clamp(28px, 8vw, 40px);
                     }
                 }
             `}</style>
-        </>
+        </div>
     );
 }
