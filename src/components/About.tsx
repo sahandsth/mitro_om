@@ -215,7 +215,7 @@ export default function About() {
             y: baseY - depth * STACK_OFFSET_Y,
             width: cw,
             height: ch,
-            zIndex: 30 - depth,
+            zIndex: 12 - depth,
             opacity: 1,
         };
     };
@@ -231,7 +231,7 @@ export default function About() {
             y: stageSize.h - marginB - sh,
             width: sw,
             height: sh,
-            zIndex: 20 + index,
+            zIndex: 8 + index,
             opacity: 1,
         };
     };
@@ -287,13 +287,17 @@ export default function About() {
                     y: lerp(start.y, end.y, t),
                     width: lerp(start.width, end.width, t),
                     height: lerp(start.height, end.height, t),
-                    zIndex: 30,
+                    zIndex: 50,
                     opacity: 1,
                 };
             }
 
             const depth = i - peelIndex;
-            return getStackPos(depth);
+            const stacked = getStackPos(depth);
+            return {
+                ...stacked,
+                zIndex: 10 - depth,
+            };
         }
 
         if (
@@ -398,18 +402,33 @@ export default function About() {
                 </div>
 
                 <div ref={stageRef} className="ab-stage">
-                    {TEAM.map((member, i) => {
+                    {TEAM.map((member, i) => ({ member, i }))
+                        .sort((a, b) => {
+                            if (phase !== "peel") return 0;
+                            const order = (idx: number) => {
+                                if (idx < peelIndex) return idx;
+                                if (idx > peelIndex) return 10 + idx;
+                                return 100;
+                            };
+                            return order(a.i) - order(b.i);
+                        })
+                        .map(({ member, i }) => {
                         const layout = getCardLayout(i);
                         if (!layout) return null;
 
                         const isCompact =
                             layout.height <
                             stackCardSize().h * 0.55;
+                        const isPeeling =
+                            phase === "peel" &&
+                            i === peelIndex &&
+                            peelFrac > 0 &&
+                            peelFrac < 1;
 
                         return (
                             <div
                                 key={member.name}
-                                className="ab-card"
+                                className={`ab-card ${isPeeling ? "ab-card--peeling" : ""}`}
                                 style={{
                                     transform: `translate(${layout.x}px, ${layout.y}px)`,
                                     width: layout.width,
@@ -425,7 +444,7 @@ export default function About() {
                                     style={{ background: member.tone }}
                                 >
                                     <div
-                                        className={`ab-card-content ${isCompact ? "ab-card-content--compact" : ""}`}
+                                        className={`ab-card-content ${isCompact ? "ab-card-content--compact" : "ab-card-content--full"}`}
                                     >
                                         {isCompact ? (
                                             <h3
@@ -438,12 +457,14 @@ export default function About() {
                                             </h3>
                                         ) : (
                                             <>
-                                                <span className="ab-card-role">
-                                                    {member.role}
-                                                </span>
-                                                <h3 className="ab-card-name">
-                                                    {member.name}
-                                                </h3>
+                                                <div className="ab-card-head">
+                                                    <span className="ab-card-role">
+                                                        {member.role}
+                                                    </span>
+                                                    <h3 className="ab-card-name">
+                                                        {member.name}
+                                                    </h3>
+                                                </div>
                                                 <p className="ab-card-bio">
                                                     {member.bio}
                                                 </p>
@@ -545,6 +566,14 @@ export default function About() {
                     opacity: 1 !important;
                 }
 
+                .ab-card--peeling {
+                    overflow: visible;
+                }
+
+                .ab-card--peeling .ab-card-inner {
+                    overflow: visible;
+                }
+
                 .ab-card-inner {
                     width: 100%;
                     height: 100%;
@@ -553,14 +582,26 @@ export default function About() {
                     overflow: hidden;
                     display: flex;
                     flex-direction: column;
-                    justify-content: flex-end;
                     opacity: 1;
                     backface-visibility: hidden;
+                    isolation: isolate;
                 }
 
                 .ab-card-content {
                     padding: clamp(10px, 2vw, 20px);
                     color: #ffffff;
+                }
+
+                .ab-card-content--full {
+                    display: flex;
+                    flex-direction: column;
+                    height: 100%;
+                    box-sizing: border-box;
+                }
+
+                .ab-card-head {
+                    flex-shrink: 0;
+                    min-height: clamp(52px, 8vh, 72px);
                 }
 
                 .ab-card-content--compact {
@@ -598,8 +639,9 @@ export default function About() {
                     font-size: clamp(14px, 1.6vw, 22px);
                     font-weight: 400;
                     margin: 0;
-                    line-height: 1.1;
+                    line-height: 1.2;
                     letter-spacing: -0.01em;
+                    min-height: 1.2em;
                 }
 
                 .ab-card-bio {
@@ -607,17 +649,19 @@ export default function About() {
                     font-size: clamp(11px, 0.95vw, 14px);
                     font-weight: 300;
                     line-height: 1.6;
-                    margin: 12px 0 0;
+                    margin: 10px 0 0;
                     opacity: 0.85;
+                    flex: 1;
                 }
 
                 .ab-card-skills {
                     list-style: none;
-                    margin: 10px 0 0;
+                    margin: auto 0 0;
                     padding: 0;
                     display: flex;
                     flex-wrap: wrap;
                     gap: 6px;
+                    flex-shrink: 0;
                 }
 
                 .ab-card-skills li {

@@ -5,7 +5,6 @@ import Image from "next/image";
 
 const STRIP_W = 54;
 const MAX_STACK = 3;
-const HOLD_RATIO = 0.62;
 const EASE = (t: number) => 1 - Math.pow(1 - t, 3);
 
 const PROJECTS = [
@@ -188,9 +187,10 @@ export default function Portfolio() {
     const { progress: loadProgress, ready: imagesReady, markLoaded } =
         usePreloadProgress(imageUrls.length);
 
-    const INTRO_VH = 0.45;
-    const OPEN_VH = 0.65;
-    const CARD_VH = 1.4;
+    const INTRO_VH = 0.35;
+    const OPEN_VH = 0.55;
+    const CARD_VH = 1.25;
+    const HOLD_RATIO = 0.5;
 
     const totalVh =
         INTRO_VH + OPEN_VH + PROJECTS.length * CARD_VH + 0.5;
@@ -294,8 +294,8 @@ export default function Portfolio() {
         return {
             width: STRIP_W + t * (widthEnd - STRIP_W),
             left: leftStart * (1 - t),
-            scatterActive: t > 0.5,
-            stripOnly: t < 0.32,
+            scatterActive: t > 0.62,
+            stripOnly: t < 0.28,
         };
     };
 
@@ -388,7 +388,7 @@ export default function Portfolio() {
                 left: 0,
                 translateX: -t * 100,
                 zIndex: 15,
-                scatterActive: true,
+                scatterActive: t < 0.35,
                 stripOnly: false,
             };
         }
@@ -433,7 +433,12 @@ export default function Portfolio() {
     };
 
     const introOpacity =
-        phase === "intro" ? 1 : phase === "opening" ? 1 - openFrac : 0;
+        phase === "intro"
+            ? 1
+            : phase === "opening"
+              ? Math.max(0, 1 - openFrac * 3.2)
+              : 0;
+    const introVisible = introOpacity > 0.02;
 
     return (
         <>
@@ -486,7 +491,8 @@ export default function Portfolio() {
                         className="pf-intro"
                         style={{
                             opacity: introOpacity,
-                            pointerEvents: introOpacity > 0.05 ? "auto" : "none",
+                            visibility: introVisible ? "visible" : "hidden",
+                            pointerEvents: introVisible ? "auto" : "none",
                         }}
                     >
                         <h1 className="pf-intro-title">Portfolio</h1>
@@ -675,7 +681,7 @@ export default function Portfolio() {
                     flex-direction: column;
                     align-items: center;
                     justify-content: center;
-                    background: transparent;
+                    background: #c4c4c4;
                     will-change: opacity;
                 }
 
@@ -830,8 +836,8 @@ export default function Portfolio() {
                     transform: translate(-50%, -50%) scale(0.15);
                     opacity: 0;
                     transition:
-                        transform 0.9s cubic-bezier(0.22, 1, 0.36, 1),
-                        opacity 0.7s ease;
+                        transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+                        opacity 0.3s ease;
                 }
 
                 .pf-scatter-main {
@@ -841,8 +847,8 @@ export default function Portfolio() {
                     transform: translate(-50%, -50%) scale(0.4);
                     opacity: 0;
                     transition:
-                        transform 0.75s cubic-bezier(0.22, 1, 0.36, 1),
-                        opacity 0.55s ease;
+                        transform 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+                        opacity 0.28s ease;
                 }
 
                 .pf-scatter--active .pf-scatter-main {
@@ -857,25 +863,25 @@ export default function Portfolio() {
                 .pf-scatter--active .pf-scatter-item--0 {
                     transform: translate(calc(-50% - 120px), calc(-50% - 28px))
                         rotate(-13deg) scale(1);
-                    transition-delay: 0.08s;
+                    transition-delay: 0.03s;
                 }
 
                 .pf-scatter--active .pf-scatter-item--1 {
                     transform: translate(calc(-50% + 112px), calc(-50% - 44px))
                         rotate(9deg) scale(1);
-                    transition-delay: 0.14s;
+                    transition-delay: 0.06s;
                 }
 
                 .pf-scatter--active .pf-scatter-item--2 {
                     transform: translate(calc(-50% - 92px), calc(-50% + 54px))
                         rotate(-7deg) scale(1);
-                    transition-delay: 0.2s;
+                    transition-delay: 0.09s;
                 }
 
                 .pf-scatter--active .pf-scatter-item--3 {
                     transform: translate(calc(-50% + 100px), calc(-50% + 46px))
                         rotate(11deg) scale(1);
-                    transition-delay: 0.26s;
+                    transition-delay: 0.12s;
                 }
 
                 .pf-card-footer {

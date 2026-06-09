@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
 
 const SERVICES = [
@@ -59,10 +59,10 @@ export default function ServicesSection() {
     const [introVisible, setIntroVisible] = useState(false);
     const [listOffset, setListOffset] = useState(0);
 
-    const INTRO_VH = 0.4;
-    const EXPAND_VH = 1.2;
+    const INTRO_VH = 0.15;
+    const SERVICE_VH = 1;
 
-    const totalVh = INTRO_VH + SERVICES.length * EXPAND_VH + 0.5;
+    const totalVh = INTRO_VH + SERVICES.length * SERVICE_VH + 0.4;
 
     const computeOffset = (idx: number) => {
         const list = listRef.current;
@@ -105,12 +105,14 @@ export default function ServicesSection() {
             setIntroVisible(true);
 
             const phaseProgress = scrolled - introEnd;
-            const perService = EXPAND_VH * vh;
-            const serviceIdx = Math.floor(phaseProgress / perService);
-            const idx = Math.min(serviceIdx, SERVICES.length - 1);
+            const perService = SERVICE_VH * vh;
+            const floatIdx = phaseProgress / perService;
+            const idx = Math.min(
+                Math.floor(floatIdx),
+                SERVICES.length - 1
+            );
 
             setOpenIndex(idx);
-            requestAnimationFrame(() => setListOffset(computeOffset(idx)));
         };
 
         window.addEventListener("scroll", handleScroll, { passive: true });
@@ -121,6 +123,14 @@ export default function ServicesSection() {
             window.removeEventListener("resize", handleScroll);
         };
     }, []);
+
+    useLayoutEffect(() => {
+        if (openIndex < 0) {
+            setListOffset(0);
+            return;
+        }
+        setListOffset(computeOffset(openIndex));
+    }, [openIndex]);
 
     return (
         <>
@@ -162,7 +172,6 @@ export default function ServicesSection() {
                                         ${isOpen ? "svc-item--open" : ""}
                                         ${isPast ? "svc-item--past" : ""}
                                     `}
-                                    style={{ transitionDelay: `${i * 0.06}s` }}
                                 >
                                     <div className="svc-title-row">
                                         <span className="svc-title">{svc.title}</span>
@@ -219,7 +228,6 @@ export default function ServicesSection() {
                     display: flex;
                     flex-direction: column;
                     align-items: center;
-                    transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
                     padding-top: calc(var(--nav-h, 110px) * 0.35);
                 }
 
@@ -229,8 +237,8 @@ export default function ServicesSection() {
                     opacity: 0;
                     transform: translateY(32px);
                     transition:
-                        opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
-                        transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+                        opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+                        transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
                 }
 
                 .svc-item--visible {
@@ -252,7 +260,7 @@ export default function ServicesSection() {
                     color: rgba(255, 255, 255, 0.14);
                     letter-spacing: -0.02em;
                     line-height: 1.05;
-                    transition: color 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+                    transition: color 0.25s ease;
                 }
 
                 .svc-item--open .svc-title {
@@ -266,7 +274,6 @@ export default function ServicesSection() {
                 .svc-body {
                     display: grid;
                     grid-template-rows: 0fr;
-                    transition: grid-template-rows 0.7s cubic-bezier(0.16, 1, 0.3, 1);
                 }
 
                 .svc-item--open .svc-body {
@@ -284,15 +291,10 @@ export default function ServicesSection() {
                     margin: 0 auto;
                     padding-bottom: clamp(16px, 2.5vh, 32px);
                     opacity: 0;
-                    transform: translateY(12px);
-                    transition:
-                        opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.08s,
-                        transform 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.08s;
                 }
 
                 .svc-item--open .svc-body-inner {
                     opacity: 1;
-                    transform: translateY(0);
                 }
 
                 .svc-desc {
