@@ -15,13 +15,13 @@ const PROJECTS = [
         about: "About Planetary Resilience Institution",
         description:
             "A comprehensive brand identity for an environmental research body — spanning logo, print, digital touchpoints, and a full visual language built around sustainability and scientific rigor.",
-        mainImage: "https://picsum.photos/seed/pri-main/400/700",
-        cover: "https://picsum.photos/seed/pri-cover/300/800",
+        mainImage:    "/images/portfolio/PR/1.png",
+        cover: "/images/portfolio/PR/Main.png",
         scatter: [
-            "https://picsum.photos/seed/pri-s1/280/360",
-            "https://picsum.photos/seed/pri-s2/280/360",
-            "https://picsum.photos/seed/pri-s3/280/360",
-            "https://picsum.photos/seed/pri-s4/280/360",
+            "/images/portfolio/PR/2.png",
+            "/images/portfolio/PR/3.png",
+            "/images/portfolio/PR/4.png",
+            "/images/portfolio/PR/5.png",
         ],
     },
     {

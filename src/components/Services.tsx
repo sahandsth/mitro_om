@@ -4,21 +4,22 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import Image from "next/image";
 
 export const SERVICES = [
+
     {
-        title: "Visual Identity",
-        description:
-            "From logo to color system, we design cohesive visual identities that speak your brand's language clearly and beautifully across every touchpoint.",
-        images: [
-            "/images/services/VI/1.png",
-            "/images/services/VI/2.png",
-            "/images/services/VI/3.png",
-            "/images/services/VI/4.png",
-        ],
-    },
+    title: "Visual Identity",
+    description:
+        "From logo systems to typography, color palettes, and brand assets, we create cohesive visual identities that communicate your brand's personality consistently across every touchpoint.",
+    images: [
+        "/images/services/VI/1.png",
+        "/images/services/VI/2.png",
+        "/images/services/VI/3.png",
+        "/images/services/VI/4.png",
+    ],
+},
     {
         title: "Character Design",
         description:
-            "We craft purposeful brand strategies that align your vision with your audience — building a foundation that drives recognition, trust, and long-term growth.",
+            "We design memorable characters that bring personality and storytelling to your brand, creating unique visual ambassadors that connect with audiences and leave a lasting impression.",
         images: [
             "/images/services/CD/1.png",
             "/images/services/CD/2.png",
@@ -26,60 +27,60 @@ export const SERVICES = [
             "/images/services/CD/4.png",
         ],
     },
-
-    {
-        title: "Website",
-        description:
-            "We design websites that are as functional as they are stunning — crafted to convert visitors into clients while reflecting your brand at its best.",
-        images: [
-            "https://picsum.photos/seed/web1/600/450",
-            "https://picsum.photos/seed/web2/600/450",
-            "https://picsum.photos/seed/web3/600/450",
-            "https://picsum.photos/seed/web4/600/450",
-        ],
-    },
     {
         title: "Content Creation",
         description:
             "Compelling content tailored to your brand voice — from copywriting to art direction — crafted to engage, inspire, and convert your audience.",
         images: [
-            "https://picsum.photos/seed/content1/600/450",
-            "https://picsum.photos/seed/content2/600/450",
-            "https://picsum.photos/seed/content3/600/450",
-            "https://picsum.photos/seed/content4/600/450",
+            "/images/services/CC/1.png",
+            "/images/services/CC/2.png",
+            "/images/services/CC/3.png",
+            "/images/services/CC/4.png",
         ],
     },
     {
-        title: "Social Media",
+        title: "Website",
         description:
-            "We build consistent social presence with content systems, campaign direction, and platform-native storytelling that keeps your brand top of mind.",
+            "We design and develop websites that are visually engaging, user-focused, and optimized to transform visitors into loyal clients while showcasing your brand at its best.",
         images: [
-            "https://picsum.photos/seed/social1/600/450",
-            "https://picsum.photos/seed/social2/600/450",
-            "https://picsum.photos/seed/social3/600/450",
-            "https://picsum.photos/seed/social4/600/450",
+            "/images/services/WS/1.png",
+            "/images/services/WS/2.png",
+            "/images/services/WS/3.png",
+            "/images/services/WS/4.png",
+        ],
+    },
+
+    {
+        title: "Poster Design",
+        description:
+            "We create impactful poster designs that combine striking visuals with clear messaging, ensuring your campaigns capture attention and communicate effectively.",
+        images: [
+            "/images/services/PD/1.png",
+            "/images/services/PD/2.png",
+            "/images/services/PD/3.png",
+            "/images/services/PD/4.png",
         ],
     },
     {
-        title: "Motion Design",
+        title: "UI Design",
         description:
-            "From subtle UI motion to full brand films, we design movement that adds rhythm, clarity, and emotion to every digital experience.",
+            "We design intuitive and visually refined user interfaces that enhance usability, improve user experiences, and seamlessly align with your brand identity.",
         images: [
-            "https://picsum.photos/seed/motion1/600/450",
-            "https://picsum.photos/seed/motion2/600/450",
-            "https://picsum.photos/seed/motion3/600/450",
-            "https://picsum.photos/seed/motion4/600/450",
+            "/images/services/UI/1.png",
+            "/images/services/UI/2.png",
+            "/images/services/UI/3.png",
+            "/images/services/UI/4.png",
         ],
     },
     {
-        title: "Photography",
+        title: "Brand Book",
         description:
-            "Art-directed photography for campaigns, products, and brand worlds — crafted to feel authentic, polished, and unmistakably yours.",
+            "We develop comprehensive brand books that define your visual and verbal guidelines, ensuring consistency and clarity across all brand communications.",
         images: [
-            "https://picsum.photos/seed/photo1/600/450",
-            "https://picsum.photos/seed/photo2/600/450",
-            "https://picsum.photos/seed/photo3/600/450",
-            "https://picsum.photos/seed/photo4/600/450",
+            "/images/services/BB/1.png",
+            "/images/services/BB/2.png",
+            "/images/services/BB/3.png",
+            "/images/services/BB/4.png",
         ],
     },
 ];
