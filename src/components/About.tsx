@@ -429,8 +429,8 @@ export default function About() {
 
     const textOpacity = () => {
         if (phase === "intro" || phase === "peel") return 1;
-        if (assembleFrac < 0.35) return 1;
-        return Math.max(0, 1 - (assembleFrac - 0.35) / 0.4);
+        if (assembleFrac < 0.1) return 1;
+        return Math.max(0, 1 - (assembleFrac - 0.1) / 0.25);
     };
 
     const textCentered =

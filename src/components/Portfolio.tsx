@@ -205,7 +205,27 @@ const delayedMorph = (moveE: number) =>
               clamp01((moveE - PREVIEW_MORPH_DELAY) / (1 - PREVIEW_MORPH_DELAY))
           );
 
-/** Nearest fully-open scroll position inside the portfolio track (px). */
+const portfolioMaxScroll = (vh: number, totalVh: number) =>
+    Math.max(0, totalVh * vh - vh);
+
+/** Sticky track is active only while the wrapper fills the viewport. */
+const isPortfolioStickyEngaged = (rect: DOMRect, vh: number) =>
+    rect.top <= 1 && rect.bottom >= vh - 1;
+
+/** Skip snap when the user is scrolling out toward an adjacent section. */
+const portfolioEdgeExit = (
+    scrolled: number,
+    maxScroll: number,
+    vh: number,
+    direction: number
+) => {
+    const edge = vh * 0.12;
+    if (scrolled < edge && direction < 0) return true;
+    if (scrolled > maxScroll - edge && direction > 0) return true;
+    return false;
+};
+
+/** Snap target inside the portfolio track (px), biased by scroll direction. */
 const snapPortfolioScrolled = (
     scrolled: number,
     vh: number,
@@ -214,22 +234,27 @@ const snapPortfolioScrolled = (
     cardVh: number,
     holdRatio: number,
     cardCount: number,
-    totalVh: number
+    totalVh: number,
+    direction: number
 ) => {
     const introEnd = introVh * vh;
     const openEnd = introEnd + openVh * vh;
     const perCard = cardVh * vh;
     const maxIdx = cardCount - 1;
-    const maxScroll = Math.max(0, totalVh * vh - vh);
+    const maxScroll = portfolioMaxScroll(vh, totalVh);
 
-    if (scrolled <= 0) return 0;
-    if (scrolled >= maxScroll) return maxScroll;
+    if (scrolled <= 0) return scrolled;
+    if (scrolled >= maxScroll) return scrolled;
 
     if (scrolled < introEnd) {
-        return scrolled < introEnd * 0.5 ? 0 : introEnd;
+        if (direction > 0) return introEnd;
+        if (direction < 0) return scrolled;
+        return scrolled < introEnd * 0.5 ? scrolled : introEnd;
     }
 
     if (scrolled < openEnd) {
+        if (direction > 0) return openEnd;
+        if (direction < 0) return introEnd;
         const mid = (introEnd + openEnd) * 0.5;
         return scrolled < mid ? introEnd : openEnd;
     }
@@ -242,9 +267,26 @@ const snapPortfolioScrolled = (
     const idx = Math.min(Math.floor(raw), maxIdx);
     const seg = raw - idx;
 
-    if (idx >= maxIdx) return holdCenter(maxIdx);
+    if (idx >= maxIdx) {
+        const lastHold = holdCenter(maxIdx);
+        const tailLen = maxScroll - lastHold;
+
+        if (direction > 0) {
+            if (seg > holdRatio || scrolled >= lastHold + tailLen * 0.2) {
+                return maxScroll;
+            }
+            return lastHold;
+        }
+        if (direction < 0) return lastHold;
+
+        const exitMid = lastHold + tailLen * 0.45;
+        return scrolled >= exitMid ? maxScroll : lastHold;
+    }
 
     if (seg <= holdRatio) return holdCenter(idx);
+
+    if (direction > 0) return segmentStart(idx + 1);
+    if (direction < 0) return holdCenter(idx);
 
     const transMid = holdRatio + (1 - holdRatio) * 0.5;
     return seg < transMid ? holdCenter(idx) : segmentStart(idx + 1);
@@ -430,6 +472,8 @@ export default function Portfolio() {
     const scatterDoneRef = useRef(false);
     const snapLockRef = useRef(false);
     const snapTimerRef = useRef(0);
+    const lastPortfolioScrolledRef = useRef<number | null>(null);
+    const scrollDirRef = useRef(0);
 
     const imageUrls = useMemo(() => ALL_IMAGE_URLS, []);
     const { progress: loadProgress, ready: imagesReady, markLoaded } =
@@ -590,6 +634,14 @@ export default function Portfolio() {
         const scrolled = -rect.top;
         const vh = window.innerHeight;
 
+        if (lastPortfolioScrolledRef.current !== null) {
+            const delta = scrolled - lastPortfolioScrolledRef.current;
+            if (Math.abs(delta) > 0.5) {
+                scrollDirRef.current = delta > 0 ? 1 : -1;
+            }
+        }
+        lastPortfolioScrolledRef.current = scrolled;
+
         setEntryFrac(clamp01(1 - rect.top / vh));
 
         if (scrolled < 0) {
@@ -648,9 +700,15 @@ export default function Portfolio() {
         const rect = wrapper.getBoundingClientRect();
         const vh = window.innerHeight;
 
-        if (rect.bottom < vh * 0.12 || rect.top > vh * 0.88) return;
+        if (!isPortfolioStickyEngaged(rect, vh)) return;
 
         const scrolled = -rect.top;
+        const maxScroll = portfolioMaxScroll(vh, totalVh);
+
+        if (portfolioEdgeExit(scrolled, maxScroll, vh, scrollDirRef.current)) {
+            return;
+        }
+
         const targetScrolled = snapPortfolioScrolled(
             scrolled,
             vh,
@@ -659,7 +717,8 @@ export default function Portfolio() {
             CARD_VH,
             HOLD_RATIO,
             PROJECTS.length,
-            totalVh
+            totalVh,
+            scrollDirRef.current
         );
 
         if (Math.abs(targetScrolled - scrolled) < 6) return;
