@@ -22,6 +22,8 @@ const PROJECTS = [
             "/images/portfolio/PR/3.png",
             "/images/portfolio/PR/4.png",
             "/images/portfolio/PR/5.png",
+            "/images/../images/portfolio/PR/3.png",
+            "/images/../images/portfolio/PR/5.png",
         ],
     },
     {

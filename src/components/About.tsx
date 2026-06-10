@@ -15,7 +15,7 @@ const TEAM = [
         name: "Elahe Akrami",
         role: "Lead Designer",
         bio: "Crafts visual identities, UI systems, and print work with a sharp eye for detail and timeless aesthetics.",
-        skills: ["Visual Identity", "UI Design", "Typography"],
+        skills: ["Visual Identity", "Brand Books", "Art & Content Direction"],
         tone: "#4a4a4a",
     },
     {
@@ -28,10 +28,12 @@ const TEAM = [
 ];
 
 const EASE_OUT = (t: number) => 1 - Math.pow(1 - t, 3);
-const EASE_IN_OUT = (t: number) =>
-    t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const EASE_OUT_EXPO = (t: number) =>
+    t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
 const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const arcLift = (t: number, amount: number) =>
+    Math.sin(t * Math.PI) * amount;
 
 type CardLayout = {
     x: number;
@@ -40,6 +42,10 @@ type CardLayout = {
     height: number;
     zIndex: number;
     opacity: number;
+    rotateZ: number;
+    rotateY: number;
+    scale: number;
+    shadow: number;
 };
 
 type Phase = "intro" | "peel" | "assemble" | "final" | "reveal" | "revealed";
@@ -195,23 +201,17 @@ export default function About() {
     });
 
     const dockRowMetrics = () => {
-        const gap = Math.max(8, stageSize.w * 0.01);
-        const padX = Math.max(56, stageSize.w * 0.07);
-        const padBottom = Math.max(80, stageSize.h * 0.12);
-        const maxRowW = stageSize.w - padX * 2;
+        const gap = 10;
+        const padRight = 72;
+        const padBottom = 96;
         const maxCardH = Math.floor(stageSize.h * 0.15);
 
-        let cardW = Math.floor(
-            (maxRowW - (TEAM.length - 1) * gap) / TEAM.length
-        );
-        cardW = Math.min(cardW, 74);
-        cardW = Math.max(cardW, 50);
-
+        let cardW = 68;
         let cardH = Math.round(cardW * 1.28);
         cardH = Math.min(cardH, maxCardH);
 
         const totalW = TEAM.length * cardW + (TEAM.length - 1) * gap;
-        const startX = (stageSize.w - totalW) / 2;
+        const startX = stageSize.w - padRight - totalW;
         const y = stageSize.h - padBottom - cardH;
 
         return { cardW, cardH, gap, startX, y };
@@ -238,20 +238,25 @@ export default function About() {
         return { cardW, cardH, gap, startX, y };
     };
 
-    const STACK_OFFSET_X = 26;
-    const STACK_OFFSET_Y = 18;
+    const STACK_OFFSET_X = 22;
+    const STACK_OFFSET_Y = 14;
 
     const getStackPos = (depth: number): CardLayout => {
         const { w: cw, h: ch } = stackCardSize();
-        const baseX = stageSize.w * 0.1;
-        const baseY = stageSize.h * 0.5 - ch / 2;
+        const padLeft = 72;
+        const anchorX = padLeft;
+        const anchorY = stageSize.h * 0.5 - ch / 2;
         return {
-            x: baseX - depth * STACK_OFFSET_X,
-            y: baseY - depth * STACK_OFFSET_Y,
+            x: anchorX - depth * STACK_OFFSET_X,
+            y: anchorY - depth * STACK_OFFSET_Y,
             width: cw,
             height: ch,
             zIndex: 12 - depth,
             opacity: 1,
+            rotateZ: depth * -0.6,
+            rotateY: 0,
+            scale: 1 - depth * 0.018,
+            shadow: 0.18 + depth * 0.04,
         };
     };
 
@@ -264,6 +269,10 @@ export default function About() {
             height: cardH,
             zIndex: 8 + index,
             opacity: 1,
+            rotateZ: 0,
+            rotateY: 0,
+            scale: 1,
+            shadow: 0.14,
         };
     };
 
@@ -276,6 +285,31 @@ export default function About() {
             height: cardH,
             zIndex: 20 + index,
             opacity: 1,
+            rotateZ: 0,
+            rotateY: 0,
+            scale: 1,
+            shadow: 0.22,
+        };
+    };
+
+    const blendLayout = (
+        a: CardLayout,
+        b: CardLayout,
+        t: number,
+        arc = 0
+    ): CardLayout => {
+        const e = EASE_OUT_EXPO(t);
+        return {
+            x: lerp(a.x, b.x, e),
+            y: lerp(a.y, b.y, e) + arcLift(e, arc),
+            width: lerp(a.width, b.width, e),
+            height: lerp(a.height, b.height, e),
+            zIndex: Math.round(lerp(a.zIndex, b.zIndex, e)),
+            opacity: lerp(a.opacity, b.opacity, e),
+            rotateZ: lerp(a.rotateZ, b.rotateZ, e),
+            rotateY: lerp(a.rotateY, b.rotateY, e),
+            scale: lerp(a.scale, b.scale, e),
+            shadow: lerp(a.shadow, b.shadow, e),
         };
     };
 
@@ -292,25 +326,29 @@ export default function About() {
             }
 
             if (i === peelIndex) {
-                const start = getStackPos(0);
-                const end = getDockPos(i);
-                const tPos = EASE_OUT(peelFrac);
-                const tSize = clamp01(EASE_IN_OUT(peelFrac) * 1.18);
-                return {
-                    x: lerp(start.x, end.x, tPos),
-                    y: lerp(start.y, end.y, tPos),
-                    width: lerp(start.width, end.width, tSize),
-                    height: lerp(start.height, end.height, tSize),
-                    zIndex: 50,
-                    opacity: 1,
+                const start: CardLayout = {
+                    ...getStackPos(0),
+                    rotateZ: -2.5,
+                    rotateY: 6,
+                    shadow: 0.28,
                 };
+                const end = getDockPos(i);
+                const blended = blendLayout(start, end, peelFrac, -32);
+                return { ...blended, zIndex: 50 };
             }
 
             const depth = i - peelIndex;
+            const settle = clamp01((peelFrac - 0.08) / 0.92);
             const stacked = getStackPos(depth);
             return {
                 ...stacked,
+                y: lerp(
+                    stacked.y - 6,
+                    stacked.y,
+                    EASE_OUT(settle)
+                ),
                 zIndex: 10 - depth,
+                rotateZ: lerp(stacked.rotateZ + 1.2, stacked.rotateZ, EASE_OUT(settle)),
             };
         }
 
@@ -326,17 +364,9 @@ export default function About() {
 
             const dock = getDockPos(i);
             const final = getFinalPos(i);
-            const tPos = EASE_OUT(assembleFrac);
-            const tSize = clamp01(EASE_IN_OUT(assembleFrac) * 1.06);
-
-            return {
-                x: lerp(dock.x, final.x, tPos),
-                y: lerp(dock.y, final.y, tPos),
-                width: lerp(dock.width, final.width, tSize),
-                height: lerp(dock.height, final.height, tSize),
-                zIndex: 20 + i,
-                opacity: 1,
-            };
+            const stagger = clamp01((assembleFrac - i * 0.07) / 0.82);
+            const blended = blendLayout(dock, final, stagger, -16);
+            return { ...blended, zIndex: 20 + i };
         }
 
         return null;
@@ -351,13 +381,14 @@ export default function About() {
         if (phase === "peel") {
             if (cardIndex < peelIndex) return 0;
             if (cardIndex === peelIndex) {
-                return 1 - clamp01((peelFrac - 0.42) / 0.38);
+                return 1 - clamp01((peelFrac - 0.28) / 0.42);
             }
             return 1;
         }
 
         if (phase === "assemble") {
-            return clamp01((assembleFrac - 0.42) / 0.38);
+            const stagger = clamp01((assembleFrac - cardIndex * 0.07) / 0.82);
+            return clamp01((stagger - 0.32) / 0.45);
         }
 
         return 1;
@@ -451,12 +482,19 @@ export default function About() {
                             peelFrac > 0 &&
                             peelFrac < 1;
 
+                        const cardTransform = [
+                            `translate3d(${layout.x}px, ${layout.y}px, 0)`,
+                            `rotateZ(${layout.rotateZ}deg)`,
+                            `rotateY(${layout.rotateY}deg)`,
+                            `scale(${layout.scale})`,
+                        ].join(" ");
+
                         return (
                             <div
                                 key={member.name}
                                 className={`ab-card ${isPeeling ? "ab-card--peeling" : ""}`}
                                 style={{
-                                    transform: `translate(${layout.x}px, ${layout.y}px)`,
+                                    transform: cardTransform,
                                     width: layout.width,
                                     height: layout.height,
                                     zIndex: layout.zIndex,
@@ -465,7 +503,10 @@ export default function About() {
                             >
                                 <div
                                     className="ab-card-inner"
-                                    style={{ background: member.tone }}
+                                    style={{
+                                        background: member.tone,
+                                        boxShadow: `0 ${8 + layout.shadow * 24}px ${20 + layout.shadow * 40}px rgba(0, 0, 0, ${layout.shadow})`,
+                                    }}
                                 >
                                     <div className="ab-card-content-stack">
                                         <div
@@ -595,12 +636,15 @@ export default function About() {
                     position: absolute;
                     top: 0;
                     left: 0;
+                    transform-origin: 0% 50%;
                     will-change: transform, width, height;
                     opacity: 1 !important;
+                    perspective: 900px;
                 }
 
                 .ab-card--peeling {
                     overflow: visible;
+                    transform-style: preserve-3d;
                 }
 
                 .ab-card--peeling .ab-card-inner {
@@ -611,13 +655,14 @@ export default function About() {
                     width: 100%;
                     height: 100%;
                     border-radius: 2px;
-                    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.18);
                     overflow: hidden;
                     display: flex;
                     flex-direction: column;
                     opacity: 1;
                     backface-visibility: hidden;
+                    transform-style: preserve-3d;
                     isolation: isolate;
+                    transition: box-shadow 0.15s linear;
                 }
 
                 .ab-card-content-stack {
@@ -658,9 +703,9 @@ export default function About() {
                 .ab-card-content--compact {
                     height: 100%;
                     display: flex;
-                    align-items: flex-end;
+                    align-items: center;
                     justify-content: center;
-                    padding: 6px 4px 8px;
+                    padding: 8px 4px;
                 }
 
                 .ab-card-name--compact {
