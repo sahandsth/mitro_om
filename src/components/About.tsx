@@ -30,6 +30,8 @@ const TEAM = [
 const EASE_OUT = (t: number) => 1 - Math.pow(1 - t, 3);
 const EASE_OUT_EXPO = (t: number) =>
     t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
+const EASE_IN_OUT_CUBIC = (t: number) =>
+    t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const arcLift = (t: number, amount: number) =>
@@ -66,7 +68,7 @@ export default function About() {
     const ASSEMBLE_VH = 1.6;
     const ASSEMBLE_ANIM = 0.92;
     const FINAL_HOLD_VH = 1.75;
-    const REVEAL_VH = 1.25;
+    const REVEAL_VH = 1.45;
     const FOOTER_HOLD_VH = 0.9;
 
     const totalVh =
@@ -175,7 +177,7 @@ export default function About() {
                 setPeelFrac(1);
                 setAssembleFrac(1);
                 const raw = (scrolled - finalHoldEnd) / (REVEAL_VH * vh);
-                setRevealFrac(EASE_OUT(raw));
+                setRevealFrac(EASE_IN_OUT_CUBIC(raw));
                 return;
             }
 
@@ -381,17 +383,48 @@ export default function About() {
         if (phase === "peel") {
             if (cardIndex < peelIndex) return 0;
             if (cardIndex === peelIndex) {
-                return 1 - clamp01((peelFrac - 0.28) / 0.42);
+                return 1 - clamp01((peelFrac - 0.2) / 0.38);
             }
             return 1;
         }
 
         if (phase === "assemble") {
             const stagger = clamp01((assembleFrac - cardIndex * 0.07) / 0.82);
-            return clamp01((stagger - 0.32) / 0.45);
+            return clamp01((stagger - 0.28) / 0.42);
         }
 
         return 1;
+    };
+
+    const isCardResizing = (cardIndex: number) => {
+        if (phase === "peel" && cardIndex === peelIndex && peelFrac > 0 && peelFrac < 1) {
+            return true;
+        }
+        if (phase === "assemble" && assembleFrac > 0 && assembleFrac < 1) {
+            return true;
+        }
+        return false;
+    };
+
+    const getFullContentScale = (cardIndex: number, layout: CardLayout, fullOpacity: number) => {
+        if (fullOpacity <= 0.02 || !isCardResizing(cardIndex)) return 1;
+
+        if (phase === "peel" && cardIndex === peelIndex) {
+            const { w: refW } = stackCardSize();
+            return Math.max(0.5, layout.width / refW);
+        }
+
+        if (phase === "assemble") {
+            const { cardW: refW } = finalRowMetrics();
+            return Math.max(0.5, layout.width / refW);
+        }
+
+        return 1;
+    };
+
+    const getDetailOpacity = (fullOpacity: number, cardIndex: number) => {
+        if (!isCardResizing(cardIndex)) return 1;
+        return clamp01((fullOpacity - 0.12) / 0.55);
     };
 
     const textOpacity = () => {
@@ -405,10 +438,39 @@ export default function About() {
         phase === "final";
     const isRevealPhase = phase === "reveal" || phase === "revealed";
 
-    const panelTransform =
-        revealFrac <= 0
-            ? "none"
-            : `translate3d(${revealFrac * 1.5}%, ${-revealFrac * 72}%, 0) skewY(${-(revealFrac * 14).toFixed(2)}deg)`;
+    const paperReveal = (t: number, vh: number, vw: number) => {
+        const e = EASE_IN_OUT_CUBIC(t);
+        const pad = Math.min(Math.max(vw * 0.048, 48), 62);
+        const originX = pad;
+
+        const rotateZ = -e * 21;
+        const translateY = -e * vh * 0.36;
+        const translateX = 0;
+
+        return {
+            originX,
+            translateX,
+            translateY,
+            rotateZ,
+            shadowY: 3 + e * 24,
+            shadowBlur: 10 + e * 32,
+            shadowAlpha: 0.04 + e * 0.11,
+            edgeOpacity: clamp01((e - 0.1) / 0.4),
+        };
+    };
+
+    const vh = stageSize.h || (typeof window !== "undefined" ? window.innerHeight : 800);
+    const vw = stageSize.w || (typeof window !== "undefined" ? window.innerWidth : 1200);
+
+    const paper = revealFrac <= 0 ? null : paperReveal(revealFrac, vh, vw);
+
+    const panelTransform = paper
+        ? `translate3d(${paper.translateX.toFixed(1)}px, ${paper.translateY.toFixed(1)}px, 0) rotate(${paper.rotateZ.toFixed(2)}deg)`
+        : "none";
+
+    const panelShadow = paper
+        ? `0 ${paper.shadowY.toFixed(0)}px ${paper.shadowBlur.toFixed(0)}px rgba(0, 0, 0, ${paper.shadowAlpha.toFixed(3)})`
+        : undefined;
 
     return (
         <div
@@ -443,9 +505,22 @@ export default function About() {
 
                 <div
                     className={`ab-panel ${isRevealPhase ? "ab-panel--reveal" : ""}`}
-                    style={{ transform: panelTransform }}
+                    style={{
+                        transform: panelTransform,
+                        boxShadow: panelShadow,
+                        transformOrigin: paper
+                            ? `${paper.originX.toFixed(1)}px 100%`
+                            : undefined,
+                    }}
                 >
                 <div className="ab-bg" />
+                {paper && paper.edgeOpacity > 0.05 && (
+                    <div
+                        className="ab-paper-edge"
+                        style={{ opacity: paper.edgeOpacity }}
+                        aria-hidden="true"
+                    />
+                )}
 
                 <div
                     className={`ab-text ${textCentered ? "ab-text--centered" : ""}`}
@@ -476,6 +551,9 @@ export default function About() {
                         if (!layout) return null;
 
                         const fullOpacity = getFullContentOpacity(i);
+                        const compactOpacity = 1 - fullOpacity;
+                        const contentScale = getFullContentScale(i, layout, fullOpacity);
+                        const detailOpacity = getDetailOpacity(fullOpacity, i);
                         const isPeeling =
                             phase === "peel" &&
                             i === peelIndex &&
@@ -512,7 +590,11 @@ export default function About() {
                                         <div
                                             className="ab-card-content ab-card-content--compact"
                                             style={{
-                                                opacity: 1 - fullOpacity,
+                                                opacity: compactOpacity,
+                                                visibility:
+                                                    compactOpacity < 0.02
+                                                        ? "hidden"
+                                                        : "visible",
                                             }}
                                         >
                                             <h3
@@ -526,7 +608,14 @@ export default function About() {
                                         </div>
                                         <div
                                             className="ab-card-content ab-card-content--full"
-                                            style={{ opacity: fullOpacity }}
+                                            style={{
+                                                opacity: fullOpacity,
+                                                visibility:
+                                                    fullOpacity < 0.02
+                                                        ? "hidden"
+                                                        : "visible",
+                                                transform: `scale(${contentScale})`,
+                                            }}
                                         >
                                             <div className="ab-card-head">
                                                 <span className="ab-card-role">
@@ -536,10 +625,18 @@ export default function About() {
                                                     {member.name}
                                                 </h3>
                                             </div>
-                                            <p className="ab-card-bio">
+                                            <p
+                                                className="ab-card-bio"
+                                                style={{
+                                                    opacity: 0.85 * detailOpacity,
+                                                }}
+                                            >
                                                 {member.bio}
                                             </p>
-                                            <ul className="ab-card-skills">
+                                            <ul
+                                                className="ab-card-skills"
+                                                style={{ opacity: detailOpacity }}
+                                            >
                                                 {member.skills.map((s) => (
                                                     <li key={s}>{s}</li>
                                                 ))}
@@ -571,14 +668,26 @@ export default function About() {
                     right: 0;
                     bottom: 0;
                     z-index: 10;
-                    min-height: 115%;
+                    height: 100%;
                     background: #c4c4c4;
-                    transform-origin: 50% 100%;
+                    transform-origin: clamp(48px, 4.8vw, 62px) 100%;
                     will-change: transform;
                 }
 
                 .ab-panel--reveal {
-                    box-shadow: 0 28px 72px rgba(0, 0, 0, 0.22);
+                    overflow: visible;
+                }
+
+                .ab-paper-edge {
+                    position: absolute;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    height: 2px;
+                    z-index: 20;
+                    pointer-events: none;
+                    background: rgba(0, 0, 0, 0.1);
+                    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.28);
                 }
 
                 .ab-bg {
@@ -647,10 +756,6 @@ export default function About() {
                     transform-style: preserve-3d;
                 }
 
-                .ab-card--peeling .ab-card-inner {
-                    overflow: visible;
-                }
-
                 .ab-card-inner {
                     width: 100%;
                     height: 100%;
@@ -669,6 +774,7 @@ export default function About() {
                     position: relative;
                     width: 100%;
                     height: 100%;
+                    overflow: hidden;
                 }
 
                 .ab-card-content {
@@ -686,13 +792,12 @@ export default function About() {
                     position: absolute;
                     inset: 0;
                     pointer-events: none;
-                }
-
-                .ab-card-content--full {
                     display: flex;
                     flex-direction: column;
                     height: 100%;
                     box-sizing: border-box;
+                    transform-origin: top center;
+                    will-change: transform, opacity;
                 }
 
                 .ab-card-head {
@@ -746,8 +851,9 @@ export default function About() {
                     font-weight: 300;
                     line-height: 1.6;
                     margin: 10px 0 0;
-                    opacity: 0.85;
                     flex: 1;
+                    min-height: 0;
+                    overflow: hidden;
                 }
 
                 .ab-card-skills {

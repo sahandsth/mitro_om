@@ -1,29 +1,61 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 
-const STRIP_W = 54;
+/** Shared cache so PfImg stays visible across strip ↔ morph remounts */
+const loadedImageUrls = new Set<string>();
+
+const markImageLoaded = (src: string) => {
+    loadedImageUrls.add(src);
+};
+
 const MAX_STACK = 3;
+/** pos 0 = nearest active panel (widest) → pos 2 = thinnest peek */
+const STRIP_RATIOS = [0.118, 0.074, 0.042];
+const MIN_STRIP_RATIO = 0.024;
 const EASE = (t: number) => 1 - Math.pow(1 - t, 3);
+const EASE_SMOOTH = (t: number) =>
+    t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+const PREVIEW_BY_TIER = [
+    { w: 0.9, top: 0.3, aspect: 1.28 },
+    { w: 0.74, top: 0.46, aspect: 1.38 },
+    { w: 0.6, top: 0.58, aspect: 1.32 },
+];
+
+const SCATTER_OFFSETS = [
+    { x: -118, y: -24, r: -12 },
+    { x: 108, y: -40, r: 9 },
+    { x: -88, y: 52, r: -7 },
+    { x: 96, y: 44, r: 11 },
+];
+
+const INTRO_TAGS = [
+    "Branding",
+    "Social Media Management",
+    "UI Design",
+    "Website Development",
+    "Advertisement campaign",
+];
 
 const PROJECTS = [
     {
         id: "01",
         title: "Planetary Resilience Institution",
-        year: "2024",
+        year: "2025",
         about: "About Planetary Resilience Institution",
         description:
-            "A comprehensive brand identity for an environmental research body — spanning logo, print, digital touchpoints, and a full visual language built around sustainability and scientific rigor.",
-        mainImage:    "/images/portfolio/PR/1.png",
+            "Planetary Resilience is a Germany-based academic institution dedicated to ecological preservation and climate research. The brand identity spans logo, print, digital touchpoints, and a full visual language built around sustainability and scientific rigor.",
+        mainImage: "/images/portfolio/PR/1.png",
         cover: "/images/portfolio/PR/Main.png",
         scatter: [
             "/images/portfolio/PR/2.png",
             "/images/portfolio/PR/3.png",
             "/images/portfolio/PR/4.png",
             "/images/portfolio/PR/5.png",
-            "/images/../images/portfolio/PR/3.png",
-            "/images/../images/portfolio/PR/5.png",
         ],
     },
     {
@@ -110,21 +142,186 @@ const PROJECTS = [
 
 const ALL_IMAGE_URLS = PROJECTS.flatMap((p) => [
     p.mainImage,
-    p.cover,
     ...p.scatter,
 ]);
 
+/** Main heroes first so the last slide is preloaded before the user reaches it */
+const PRELOAD_MAIN_URLS = PROJECTS.map((p) => p.mainImage);
+const PRELOAD_SCATTER_URLS = PROJECTS.flatMap((p) => p.scatter);
+
+const EXPAND_DELAY = 0.08;
+const AUTO_SCATTER_MS = 1000;
+const PREVIEW_MORPH_DELAY = 0.1;
+const SNAP_DEBOUNCE_MS = 140;
+const HERO_SIZE = { w: 248, h: 168 };
+
+/** Match morph landing position to scatter-main center in the flex layout. */
+const heroTargetFromLayout = (vh: number, panelF = 1) => {
+    const navH = 110;
+    const padTop = (navH + 16) * panelF;
+    const padBottom = 56 * panelF;
+    const headerBlock = 78;
+    const scatterMargin = 8;
+    const footerBlock = 96;
+    const scatterMax = vh * 0.46;
+    const scatterMin = 280;
+    const available =
+        vh - padTop - padBottom - headerBlock - footerBlock - scatterMargin;
+    const scatterH = Math.min(Math.max(scatterMin, available), scatterMax);
+    const centerY = padTop + headerBlock + scatterMargin + scatterH / 2;
+
+    return {
+        w: HERO_SIZE.w,
+        h: HERO_SIZE.h,
+        topVh: (centerY - HERO_SIZE.h / 2) / vh,
+    };
+};
+
+type HeroTarget = ReturnType<typeof heroTargetFromLayout>;
+
+const resolveHeroEnd = (
+    vh: number,
+    panelF: number,
+    measured: HeroTarget | null
+) => {
+    const layout = heroTargetFromLayout(vh, panelF);
+    if (!measured || measured.topVh <= 0) return layout;
+
+    const blend = clamp01((panelF - 0.82) / 0.18);
+    return {
+        ...layout,
+        topVh: lerp(layout.topVh, measured.topVh, blend),
+    };
+};
+
+const stripZ = (tier: number) => 16 - tier;
+const Z_ACTIVE = 22;
+const Z_EXIT = 8;
+
+const delayedMorph = (moveE: number) =>
+    moveE <= PREVIEW_MORPH_DELAY
+        ? 0
+        : EASE_SMOOTH(
+              clamp01((moveE - PREVIEW_MORPH_DELAY) / (1 - PREVIEW_MORPH_DELAY))
+          );
+
+/** Nearest fully-open scroll position inside the portfolio track (px). */
+const snapPortfolioScrolled = (
+    scrolled: number,
+    vh: number,
+    introVh: number,
+    openVh: number,
+    cardVh: number,
+    holdRatio: number,
+    cardCount: number,
+    totalVh: number
+) => {
+    const introEnd = introVh * vh;
+    const openEnd = introEnd + openVh * vh;
+    const perCard = cardVh * vh;
+    const maxIdx = cardCount - 1;
+    const maxScroll = Math.max(0, totalVh * vh - vh);
+
+    if (scrolled <= 0) return 0;
+    if (scrolled >= maxScroll) return maxScroll;
+
+    if (scrolled < introEnd) {
+        return scrolled < introEnd * 0.5 ? 0 : introEnd;
+    }
+
+    if (scrolled < openEnd) {
+        const mid = (introEnd + openEnd) * 0.5;
+        return scrolled < mid ? introEnd : openEnd;
+    }
+
+    const holdCenter = (idx: number) =>
+        openEnd + idx * perCard + holdRatio * perCard * 0.5;
+    const segmentStart = (idx: number) => openEnd + idx * perCard;
+
+    const raw = (scrolled - openEnd) / perCard;
+    const idx = Math.min(Math.floor(raw), maxIdx);
+    const seg = raw - idx;
+
+    if (idx >= maxIdx) return holdCenter(maxIdx);
+
+    if (seg <= holdRatio) return holdCenter(idx);
+
+    const transMid = holdRatio + (1 - holdRatio) * 0.5;
+    return seg < transMid ? holdCenter(idx) : segmentStart(idx + 1);
+};
+
 type Phase = "intro" | "opening" | "cards";
+
+type StackGeom = {
+    positions: number[];
+    widths: number[];
+    totalW: number;
+};
 
 type CardLayout = {
     visible: boolean;
-    mode: "past" | "active" | "exiting" | "entering" | "stack";
-    left?: number;
+    mode: "strip" | "active" | "exiting" | "entering" | "past";
+    left: number;
     width: number;
-    translateX: number;
+    slideX: number;
     zIndex: number;
-    scatterActive: boolean;
-    stripOnly: boolean;
+    scatterFrac: number;
+    contentFrac: number;
+    isStrip: boolean;
+    stackPos: number;
+    previewW: number;
+    previewTop: number;
+    previewAspect: number;
+    panelExpand: number;
+    mainMorph: number;
+    useMainMorph: boolean;
+    morphStartW: number;
+    morphStartH: number;
+    morphStartTop: number;
+    heroEndW: number;
+    heroEndH: number;
+    heroEndTopVh: number;
+    stripReveal: number;
+};
+
+const NO_MORPH = {
+    panelExpand: 1,
+    mainMorph: 1,
+    useMainMorph: false,
+    morphStartW: 0,
+    morphStartH: 0,
+    morphStartTop: 0,
+    heroEndW: 0,
+    heroEndH: 0,
+    heroEndTopVh: 0,
+    stripReveal: 1,
+};
+
+const morphFromExpand = (
+    expandProgress: number,
+    preview: { w: number; top: number; aspect: number },
+    cardWidth: number,
+    vh: number,
+    measuredHero: HeroTarget | null
+) => {
+    const t = clamp01(expandProgress);
+    const safeW = Math.max(cardWidth, 1);
+    const startW = safeW * preview.w;
+    const startH = startW / preview.aspect;
+    const heroEnd = resolveHeroEnd(vh, t, measuredHero);
+
+    return {
+        panelExpand: t,
+        mainMorph: t,
+        useMainMorph: true,
+        morphStartW: startW,
+        morphStartH: startH,
+        morphStartTop: preview.top,
+        heroEndW: heroEnd.w,
+        heroEndH: heroEnd.h,
+        heroEndTopVh: heroEnd.topVh,
+        stripReveal: 1,
+    };
 };
 
 function usePreloadProgress(total: number) {
@@ -134,6 +331,7 @@ function usePreloadProgress(total: number) {
     const markLoaded = useCallback((src: string) => {
         if (loadedRef.current.has(src)) return;
         loadedRef.current.add(src);
+        markImageLoaded(src);
         setCount(loadedRef.current.size);
     }, []);
 
@@ -149,18 +347,52 @@ function PfImg({
     alt,
     sizes,
     priority,
+    imagesReady,
     className,
 }: {
     src: string;
     alt: string;
     sizes: string;
     priority?: boolean;
+    imagesReady?: boolean;
     className?: string;
 }) {
-    const [loaded, setLoaded] = useState(false);
+    const [loaded, setLoaded] = useState(() => loadedImageUrls.has(src));
+
+    const reveal = useCallback(() => {
+        markImageLoaded(src);
+        setLoaded(true);
+    }, [src]);
+
+    useEffect(() => {
+        if (loadedImageUrls.has(src)) {
+            setLoaded(true);
+        }
+    }, [src, imagesReady]);
+
+    useLayoutEffect(() => {
+        if (loadedImageUrls.has(src)) {
+            setLoaded(true);
+        }
+    });
+
+    useEffect(() => {
+        if (loadedImageUrls.has(src)) return;
+
+        const probe = new window.Image();
+        const done = () => reveal();
+        probe.onload = done;
+        probe.onerror = done;
+        probe.src = src;
+        if (probe.complete) done();
+    }, [src, reveal]);
 
     return (
-        <div className={`pf-img-wrap ${loaded ? "pf-img-wrap--loaded" : ""} ${className ?? ""}`}>
+        <div
+            className={`pf-img-wrap ${loaded ? "pf-img-wrap--loaded" : ""} ${
+                priority ? "pf-img-wrap--priority" : ""
+            } ${className ?? ""}`}
+        >
             {!loaded && <span className="pf-img-shimmer" aria-hidden="true" />}
             <Image
                 src={src}
@@ -168,7 +400,9 @@ function PfImg({
                 fill
                 sizes={sizes}
                 priority={priority}
-                onLoad={() => setLoaded(true)}
+                loading={priority ? "eager" : "lazy"}
+                onLoad={reveal}
+                onError={reveal}
                 style={{ objectFit: "cover" }}
             />
         </div>
@@ -178,24 +412,67 @@ function PfImg({
 export default function Portfolio() {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const stageRef = useRef<HTMLDivElement>(null);
+    const heroMeasureRef = useRef<HTMLDivElement>(null);
+    const heroProbeRef = useRef<HTMLDivElement>(null);
     const [stageWidth, setStageWidth] = useState(0);
+    const [layoutReady, setLayoutReady] = useState(false);
     const [phase, setPhase] = useState<Phase>("intro");
     const [openFrac, setOpenFrac] = useState(0);
     const [cardIndex, setCardIndex] = useState(0);
     const [cardFrac, setCardFrac] = useState(0);
+    const [entryFrac, setEntryFrac] = useState(1);
     const [showLoader, setShowLoader] = useState(true);
+    const [viewportH, setViewportH] = useState(0);
+    const [measuredHero, setMeasuredHero] = useState<HeroTarget | null>(null);
+    const [autoScatter, setAutoScatter] = useState(0);
+    const scatterRafRef = useRef(0);
+    const scatterSessionRef = useRef("");
+    const scatterDoneRef = useRef(false);
+    const snapLockRef = useRef(false);
+    const snapTimerRef = useRef(0);
 
     const imageUrls = useMemo(() => ALL_IMAGE_URLS, []);
     const { progress: loadProgress, ready: imagesReady, markLoaded } =
         usePreloadProgress(imageUrls.length);
 
-    const INTRO_VH = 0.35;
-    const OPEN_VH = 0.55;
-    const CARD_VH = 1.25;
-    const HOLD_RATIO = 0.5;
+    const INTRO_VH = 0.4;
+    const OPEN_VH = 0.6;
+    const CARD_VH = 1.3;
+    const HOLD_RATIO = 0.48;
 
     const totalVh =
         INTRO_VH + OPEN_VH + PROJECTS.length * CARD_VH + 0.5;
+
+    const layoutVh = Math.max(viewportH, 900);
+
+    const stackGeometry = useCallback(
+        (count: number): StackGeom => {
+            if (stageWidth === 0 || count === 0) {
+                return { positions: [], widths: [], totalW: 0 };
+            }
+            const widths = STRIP_RATIOS.slice(0, count).map(
+                (r) => stageWidth * r
+            );
+            const totalW = widths.reduce((a, b) => a + b, 0);
+            const positions: number[] = [];
+            let x = stageWidth - totalW;
+            for (let i = 0; i < count; i++) {
+                positions.push(x);
+                x += widths[i];
+            }
+            return { positions, widths, totalW };
+        },
+        [stageWidth]
+    );
+
+    const previewForTier = (tier: number) =>
+        PREVIEW_BY_TIER[Math.min(tier, PREVIEW_BY_TIER.length - 1)];
+
+    const easeOnce = (raw: number) => EASE_SMOOTH(clamp01(raw));
+
+    /** Width expands after card comes to front */
+    const expandT = (raw: number) =>
+        easeOnce(clamp01((raw - EXPAND_DELAY) / (1 - EXPAND_DELAY)));
 
     const measureStage = useCallback(() => {
         if (stageRef.current) {
@@ -203,11 +480,87 @@ export default function Portfolio() {
         }
     }, []);
 
+    const measureHeroTarget = useCallback(() => {
+        const panel = heroMeasureRef.current;
+        const probe = heroProbeRef.current;
+        if (!panel || !probe) return;
+
+        const vh = window.innerHeight;
+        const panelRect = panel.getBoundingClientRect();
+        const probeRect = probe.getBoundingClientRect();
+
+        setMeasuredHero({
+            w: probeRect.width,
+            h: probeRect.height,
+            topVh: (probeRect.top - panelRect.top) / vh,
+        });
+    }, []);
+
     useEffect(() => {
-        measureStage();
-        window.addEventListener("resize", measureStage, { passive: true });
-        return () => window.removeEventListener("resize", measureStage);
-    }, [measureStage]);
+        const onResize = () => {
+            setViewportH(window.innerHeight);
+            measureStage();
+            measureHeroTarget();
+        };
+        onResize();
+        window.addEventListener("resize", onResize, { passive: true });
+        return () => window.removeEventListener("resize", onResize);
+    }, [measureStage, measureHeroTarget]);
+
+    useEffect(() => {
+        measureHeroTarget();
+    }, [measureHeroTarget, stageWidth, viewportH]);
+
+    useEffect(() => {
+        if (!imagesReady) return;
+
+        const maxIdx = PROJECTS.length - 1;
+        const expanding =
+            (phase === "opening" && openFrac < 1) ||
+            (phase === "cards" &&
+                cardIndex < maxIdx &&
+                cardFrac > 0);
+
+        if (expanding) {
+            cancelAnimationFrame(scatterRafRef.current);
+            scatterDoneRef.current = false;
+            return;
+        }
+
+        if (phase === "intro") {
+            scatterSessionRef.current = "";
+            scatterDoneRef.current = false;
+            cancelAnimationFrame(scatterRafRef.current);
+            return;
+        }
+
+        const settledKey = `settled-${cardIndex}`;
+        if (
+            settledKey === scatterSessionRef.current &&
+            scatterDoneRef.current
+        ) {
+            return;
+        }
+
+        scatterSessionRef.current = settledKey;
+        scatterDoneRef.current = false;
+        setAutoScatter(0);
+        cancelAnimationFrame(scatterRafRef.current);
+
+        const start = performance.now();
+        const tick = (now: number) => {
+            const t = clamp01((now - start) / AUTO_SCATTER_MS);
+            setAutoScatter(EASE(t));
+            if (t < 1) {
+                scatterRafRef.current = requestAnimationFrame(tick);
+            } else {
+                scatterDoneRef.current = true;
+            }
+        };
+
+        scatterRafRef.current = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(scatterRafRef.current);
+    }, [imagesReady, phase, cardIndex, cardFrac, openFrac]);
 
     useEffect(() => {
         if (!imagesReady) return;
@@ -216,134 +569,327 @@ export default function Portfolio() {
     }, [imagesReady]);
 
     useEffect(() => {
-        const handleScroll = () => {
-            const wrapper = wrapperRef.current;
-            if (!wrapper) return;
+        if (imagesReady) return;
+        const t = window.setTimeout(() => {
+            imageUrls.forEach((src) => markLoaded(src));
+        }, 8000);
+        return () => window.clearTimeout(t);
+    }, [imagesReady, imageUrls, markLoaded]);
 
-            const scrolled = -wrapper.getBoundingClientRect().top;
-            const vh = window.innerHeight;
+    useEffect(() => {
+        if (cardIndex < PROJECTS.length - 3) return;
+        const last = PROJECTS[PROJECTS.length - 1]?.mainImage;
+        if (last) markImageLoaded(last);
+    }, [cardIndex]);
 
-            if (scrolled < 0) {
-                setPhase("intro");
-                setOpenFrac(0);
-                setCardIndex(0);
-                setCardFrac(0);
-                return;
-            }
+    const syncFromScroll = useCallback(() => {
+        const wrapper = wrapperRef.current;
+        if (!wrapper) return;
 
-            const introEnd = INTRO_VH * vh;
-            const openEnd = introEnd + OPEN_VH * vh;
+        const rect = wrapper.getBoundingClientRect();
+        const scrolled = -rect.top;
+        const vh = window.innerHeight;
 
-            if (scrolled < introEnd) {
-                setPhase("intro");
-                setOpenFrac(0);
-                setCardIndex(0);
-                setCardFrac(0);
-                return;
-            }
+        setEntryFrac(clamp01(1 - rect.top / vh));
 
-            if (scrolled < openEnd) {
-                setPhase("opening");
-                const raw = (scrolled - introEnd) / (OPEN_VH * vh);
-                setOpenFrac(EASE(raw));
-                setCardIndex(0);
-                setCardFrac(0);
-                return;
-            }
+        if (scrolled < 0) {
+            setPhase("intro");
+            setOpenFrac(0);
+            setCardIndex(0);
+            setCardFrac(0);
+            return;
+        }
 
-            setPhase("cards");
-            setOpenFrac(1);
+        const introEnd = INTRO_VH * vh;
+        const openEnd = introEnd + OPEN_VH * vh;
 
-            const perCard = CARD_VH * vh;
-            const raw = (scrolled - openEnd) / perCard;
-            const maxIdx = PROJECTS.length - 1;
-            const clamped = Math.min(raw, maxIdx);
-            const idx = Math.floor(clamped);
-            const seg = clamped - idx;
-            const frac =
-                idx >= maxIdx
-                    ? 0
-                    : seg > HOLD_RATIO
-                      ? EASE((seg - HOLD_RATIO) / (1 - HOLD_RATIO))
-                      : 0;
+        if (scrolled < introEnd) {
+            setPhase("intro");
+            setOpenFrac(0);
+            setCardIndex(0);
+            setCardFrac(0);
+            return;
+        }
 
-            setCardIndex(idx);
-            setCardFrac(frac);
-        };
+        if (scrolled < openEnd) {
+            setPhase("opening");
+            setOpenFrac((scrolled - introEnd) / (OPEN_VH * vh));
+            setCardIndex(0);
+            setCardFrac(0);
+            return;
+        }
 
-        window.addEventListener("scroll", handleScroll, { passive: true });
-        window.addEventListener("resize", handleScroll, { passive: true });
-        handleScroll();
-        return () => {
-            window.removeEventListener("scroll", handleScroll);
-            window.removeEventListener("resize", handleScroll);
-        };
+        setPhase("cards");
+        setOpenFrac(1);
+
+        const perCard = CARD_VH * vh;
+        const raw = (scrolled - openEnd) / perCard;
+        const maxIdx = PROJECTS.length - 1;
+        const clamped = Math.min(raw, maxIdx);
+        const idx = Math.floor(clamped);
+        const seg = clamped - idx;
+        const frac =
+            idx >= maxIdx
+                ? 0
+                : seg > HOLD_RATIO
+                  ? (seg - HOLD_RATIO) / (1 - HOLD_RATIO)
+                  : 0;
+
+        setCardIndex(idx);
+        setCardFrac(frac);
     }, []);
 
-    const getStackCount = (baseIndex: number, includeIncomingInStack: boolean) => {
-        const remaining =
-            PROJECTS.length - baseIndex - (includeIncomingInStack ? 0 : 1);
-        return Math.min(MAX_STACK, Math.max(0, remaining));
+    const snapToNearestOpen = useCallback(() => {
+        if (snapLockRef.current) return;
+
+        const wrapper = wrapperRef.current;
+        if (!wrapper) return;
+
+        const rect = wrapper.getBoundingClientRect();
+        const vh = window.innerHeight;
+
+        if (rect.bottom < vh * 0.12 || rect.top > vh * 0.88) return;
+
+        const scrolled = -rect.top;
+        const targetScrolled = snapPortfolioScrolled(
+            scrolled,
+            vh,
+            INTRO_VH,
+            OPEN_VH,
+            CARD_VH,
+            HOLD_RATIO,
+            PROJECTS.length,
+            totalVh
+        );
+
+        if (Math.abs(targetScrolled - scrolled) < 6) return;
+
+        const targetY = window.scrollY + rect.top + targetScrolled;
+        snapLockRef.current = true;
+        window.scrollTo({ top: Math.max(0, targetY), behavior: "smooth" });
+        window.setTimeout(() => {
+            snapLockRef.current = false;
+        }, 700);
+    }, [totalVh]);
+
+    useLayoutEffect(() => {
+        setViewportH(window.innerHeight);
+        measureStage();
+        measureHeroTarget();
+        syncFromScroll();
+        setLayoutReady(true);
+    }, [measureStage, measureHeroTarget, syncFromScroll]);
+
+    useEffect(() => {
+        const queueSnap = () => {
+            window.clearTimeout(snapTimerRef.current);
+            snapTimerRef.current = window.setTimeout(() => {
+                snapToNearestOpen();
+            }, SNAP_DEBOUNCE_MS);
+        };
+
+        window.addEventListener("scroll", syncFromScroll, { passive: true });
+        window.addEventListener("resize", syncFromScroll, { passive: true });
+        window.addEventListener("scrollend", snapToNearestOpen, {
+            passive: true,
+        });
+        window.addEventListener("scroll", queueSnap, { passive: true });
+
+        return () => {
+            window.removeEventListener("scroll", syncFromScroll);
+            window.removeEventListener("resize", syncFromScroll);
+            window.removeEventListener("scrollend", snapToNearestOpen);
+            window.removeEventListener("scroll", queueSnap);
+            window.clearTimeout(snapTimerRef.current);
+        };
+    }, [syncFromScroll, snapToNearestOpen]);
+
+    const stackCountAfter = (idx: number) =>
+        Math.min(MAX_STACK, Math.max(0, PROJECTS.length - idx - 1));
+
+    const stripLayout = (
+        tier: number,
+        geom: StackGeom
+    ): Pick<
+        CardLayout,
+        | "left"
+        | "width"
+        | "previewW"
+        | "previewTop"
+        | "previewAspect"
+        | "stackPos"
+    > => {
+        const pv = previewForTier(tier);
+        return {
+            left: geom.positions[tier] ?? 0,
+            width: geom.widths[tier] ?? 0,
+            previewW: pv.w,
+            previewTop: pv.top,
+            previewAspect: pv.aspect,
+            stackPos: tier,
+        };
     };
 
-    const getEnteringLayout = (
-        t: number,
-        stackBefore: number,
-        stackAfter: number
-    ): Pick<CardLayout, "width" | "left" | "scatterActive" | "stripOnly"> => {
-        const widthEnd = stageWidth - stackAfter * STRIP_W;
-        const leftStart = stageWidth - stackBefore * STRIP_W;
+    const getEntering = (
+        rawT: number,
+        startL: number,
+        startW: number,
+        endStackCount: number
+    ): Omit<
+        CardLayout,
+        "visible" | "mode" | "zIndex" | "stackPos" | "previewW" | "previewTop" | "previewAspect"
+    > & {
+        previewW: number;
+        previewTop: number;
+        previewAspect: number;
+        stackPos: number;
+    } => {
+        const promoteE = easeOnce(rawT);
+        const ex = expandT(rawT);
+        const endGeom = stackGeometry(endStackCount);
+        const targetW = stageWidth - endGeom.totalW;
+        const pv = previewForTier(0);
+
         return {
-            width: STRIP_W + t * (widthEnd - STRIP_W),
-            left: leftStart * (1 - t),
-            scatterActive: t > 0.62,
-            stripOnly: t < 0.28,
+            left: lerp(startL, 0, promoteE),
+            width: lerp(startW, targetW, ex),
+            slideX: 0,
+            scatterFrac: 0,
+            contentFrac: EASE(clamp01((ex - 0.45) / 0.55)),
+            isStrip: false,
+            previewW: pv.w,
+            previewTop: pv.top,
+            previewAspect: pv.aspect,
+            stackPos: 0,
+            ...morphFromExpand(
+                ex,
+                pv,
+                lerp(startW, targetW, ex),
+                layoutVh,
+                measuredHero
+            ),
         };
     };
 
     const getCardLayout = (i: number): CardLayout => {
+        const pv0 = previewForTier(0);
         const hidden: CardLayout = {
             visible: false,
-            mode: "stack",
-            width: STRIP_W,
-            translateX: 0,
+            mode: "strip",
+            left: 0,
+            width: 0,
+            slideX: 0,
             zIndex: 0,
-            scatterActive: false,
-            stripOnly: true,
+            scatterFrac: 0,
+            contentFrac: 0,
+            isStrip: true,
+            stackPos: 0,
+            previewW: pv0.w,
+            previewTop: pv0.top,
+            previewAspect: pv0.aspect,
+            ...NO_MORPH,
+            panelExpand: 0,
         };
 
         if (stageWidth === 0) return hidden;
 
-        if (phase === "intro") return hidden;
+        const introStripTotal = Math.min(MAX_STACK, PROJECTS.length);
+
+        const introStack = stackGeometry(introStripTotal);
+
+        if (phase === "intro") {
+            if (i >= introStripTotal) return hidden;
+
+            const reveal = clamp01((entryFrac - i * 0.08) / 0.84);
+            const slideX =
+                (1 - easeOnce(reveal)) * (stageWidth * 0.06 + i * 28);
+            const strip = stripLayout(i, introStack);
+
+            return {
+                visible: true,
+                mode: "strip",
+                ...strip,
+                slideX,
+                zIndex: stripZ(i),
+                scatterFrac: 0,
+                contentFrac: 0,
+                isStrip: true,
+                ...NO_MORPH,
+                panelExpand: 0,
+            };
+        }
 
         if (phase === "opening") {
-            const t = openFrac;
-            const stackBefore = Math.min(MAX_STACK, PROJECTS.length);
-            const stackAfter = getStackCount(0, false);
+            const moveE = easeOnce(openFrac);
+            const ex = expandT(openFrac);
+            const stackN = stackCountAfter(0);
+            const finalStack = stackGeometry(stackN);
 
             if (i === 0) {
-                const entering = getEnteringLayout(t, stackBefore, stackAfter);
+                const startL = introStack.positions[0] ?? 0;
+                const startW = introStack.widths[0] ?? 0;
+                const endW = stageWidth - finalStack.totalW;
+
+                const cardW = lerp(startW, endW, ex);
+                const pv = previewForTier(0);
+                const expandDone = openFrac >= 0.999 || ex >= 0.999;
+
                 return {
                     visible: true,
-                    mode: t < 1 ? "entering" : "active",
-                    ...entering,
-                    translateX: 0,
-                    zIndex: 18,
+                    mode: expandDone ? "active" : "entering",
+                    left: lerp(startL, 0, ex),
+                    width: cardW,
+                    slideX: 0,
+                    scatterFrac: expandDone ? autoScatter : 0,
+                    contentFrac: EASE(clamp01((ex - 0.45) / 0.55)),
+                    isStrip: false,
+                    previewW: pv.w,
+                    previewTop: pv.top,
+                    previewAspect: pv.aspect,
+                    stackPos: 0,
+                    zIndex: Math.round(
+                        lerp(stripZ(0), Z_ACTIVE, easeOnce(openFrac))
+                    ),
+                    ...morphFromExpand(ex, pv, cardW, layoutVh, measuredHero),
                 };
             }
 
-            if (i >= 1 && i < stackBefore) {
-                const stackCount = stackBefore - 1;
-                const pos = i - 1;
+            if (i >= 1 && i <= stackN) {
+                const tier = i - 1;
+                const inIntro = i < introStripTotal;
+                const startPv = previewForTier(inIntro ? i : tier);
+                const endPv = previewForTier(tier);
+
+                if (!inIntro && openFrac < 0.08) return hidden;
+
+                const startL = inIntro
+                    ? (introStack.positions[i] ?? finalStack.positions[tier] ?? 0)
+                    : stageWidth;
+                const startW = inIntro
+                    ? (introStack.widths[i] ?? 0)
+                    : stageWidth * MIN_STRIP_RATIO;
+                const appearE = inIntro ? moveE : easeOnce(clamp01((openFrac - 0.2) / 0.8));
+
                 return {
                     visible: true,
-                    mode: "stack",
-                    width: STRIP_W,
-                    left: stageWidth - (stackCount - pos) * STRIP_W,
-                    translateX: 0,
-                    zIndex: 8 + pos,
-                    scatterActive: false,
-                    stripOnly: true,
+                    mode: "strip",
+                    left: lerp(startL, finalStack.positions[tier] ?? 0, inIntro ? moveE : appearE),
+                    width: lerp(startW, finalStack.widths[tier] ?? 0, inIntro ? moveE : appearE),
+                    previewW: lerp(startPv.w, endPv.w, inIntro ? moveE : appearE),
+                    previewTop: lerp(startPv.top, endPv.top, inIntro ? moveE : appearE),
+                    previewAspect: lerp(
+                        startPv.aspect,
+                        endPv.aspect,
+                        inIntro ? moveE : appearE
+                    ),
+                    slideX: 0,
+                    zIndex: stripZ(tier),
+                    scatterFrac: 0,
+                    contentFrac: 0,
+                    isStrip: true,
+                    stackPos: tier,
+                    ...NO_MORPH,
+                    panelExpand: 0,
                 };
             }
 
@@ -351,96 +897,204 @@ export default function Portfolio() {
         }
 
         const maxIdx = PROJECTS.length - 1;
-        const isTransitioning = cardFrac > 0 && cardIndex < maxIdx;
-        const t = cardFrac;
+        const transitioning = cardFrac > 0 && cardIndex < maxIdx;
+        const moveE = easeOnce(cardFrac);
+        const stackAfter = stackCountAfter(cardIndex);
+        const settledGeom = stackGeometry(stackAfter);
 
         if (i < cardIndex) {
             return {
                 visible: true,
                 mode: "past",
-                width: stageWidth - getStackCount(cardIndex, false) * STRIP_W,
                 left: 0,
-                translateX: -105,
+                width: stageWidth - settledGeom.totalW,
+                slideX: -102,
                 zIndex: 1,
-                scatterActive: false,
-                stripOnly: false,
+                scatterFrac: 0,
+                contentFrac: 0,
+                isStrip: false,
+                stackPos: 0,
+                previewW: pv0.w,
+                previewTop: pv0.top,
+                previewAspect: pv0.aspect,
+                ...NO_MORPH,
             };
         }
 
-        if (i === cardIndex && !isTransitioning) {
-            const stackCount = getStackCount(cardIndex, false);
+        if (i === cardIndex && !transitioning) {
+            const cardW = stageWidth - settledGeom.totalW;
+
             return {
                 visible: true,
                 mode: "active",
-                width: stageWidth - stackCount * STRIP_W,
                 left: 0,
-                translateX: 0,
-                zIndex: 20,
-                scatterActive: true,
-                stripOnly: false,
+                width: cardW,
+                slideX: 0,
+                zIndex: Z_ACTIVE,
+                scatterFrac: autoScatter,
+                contentFrac: 1,
+                isStrip: false,
+                stackPos: 0,
+                previewW: pv0.w,
+                previewTop: pv0.top,
+                previewAspect: pv0.aspect,
+                ...morphFromExpand(1, pv0, cardW, layoutVh, measuredHero),
             };
         }
 
-        if (i === cardIndex && isTransitioning) {
-            const stackCount = getStackCount(cardIndex, false);
+        if (i === cardIndex && transitioning) {
+            const cardW = stageWidth - settledGeom.totalW;
+
             return {
                 visible: true,
                 mode: "exiting",
-                width: stageWidth - stackCount * STRIP_W,
                 left: 0,
-                translateX: -t * 100,
-                zIndex: 15,
-                scatterActive: t < 0.35,
-                stripOnly: false,
+                width: cardW,
+                slideX: -moveE * 100,
+                zIndex: Math.round(lerp(Z_ACTIVE, Z_EXIT, moveE)),
+                scatterFrac: lerp(autoScatter, 0, moveE),
+                contentFrac: lerp(1, 0, moveE),
+                isStrip: false,
+                stackPos: 0,
+                previewW: pv0.w,
+                previewTop: pv0.top,
+                previewAspect: pv0.aspect,
+                ...morphFromExpand(1, pv0, cardW, layoutVh, measuredHero),
             };
         }
 
-        if (i === cardIndex + 1 && isTransitioning) {
-            const stackBefore = getStackCount(cardIndex, true);
-            const stackAfter = getStackCount(cardIndex + 1, false);
-            const entering = getEnteringLayout(t, stackBefore, stackAfter);
+        if (i === cardIndex + 1 && transitioning) {
+            const nextStack = stackCountAfter(cardIndex + 1);
+            const entering = getEntering(
+                cardFrac,
+                settledGeom.positions[0] ?? 0,
+                settledGeom.widths[0] ?? 0,
+                nextStack
+            );
+
             return {
                 visible: true,
                 mode: "entering",
                 ...entering,
-                translateX: 0,
-                zIndex: 18,
+                zIndex: Math.round(
+                    lerp(stripZ(0), Z_ACTIVE, easeOnce(cardFrac))
+                ),
             };
         }
 
-        const stackStart = cardIndex + 1 + (isTransitioning ? 1 : 0);
-        const stackEnd = stackStart + MAX_STACK - 1;
+        const stackStart = cardIndex + 1 + (transitioning ? 1 : 0);
+        const stackN = stackCountAfter(
+            cardIndex + (transitioning ? 1 : 0)
+        );
+        const stackGeom = stackGeometry(stackN);
 
-        if (i >= stackStart && i <= stackEnd) {
-            const stackCount = getStackCount(
-                cardIndex + (isTransitioning ? 1 : 0),
-                false
-            );
-            const pos = i - stackStart;
-            if (pos >= stackCount) return hidden;
+        if (i >= stackStart && i < stackStart + stackN) {
+            const tier = i - stackStart;
+            const to = stripLayout(tier, stackGeom);
+            const isNewBack = transitioning && i > cardIndex + stackAfter;
+
+            if (isNewBack) {
+                const revealE = easeOnce(cardFrac);
+                const peekW = stageWidth * MIN_STRIP_RATIO;
+                const startPv = previewForTier(
+                    Math.min(tier + 1, PREVIEW_BY_TIER.length - 1)
+                );
+
+                return {
+                    visible: true,
+                    mode: "strip",
+                    left: lerp(stageWidth - peekW * 0.35, to.left, revealE),
+                    width: lerp(peekW, to.width, revealE),
+                    previewW: lerp(startPv.w * 0.92, to.previewW, revealE),
+                    previewTop: lerp(startPv.top, to.previewTop, revealE),
+                    previewAspect: lerp(
+                        startPv.aspect,
+                        to.previewAspect,
+                        revealE
+                    ),
+                    slideX: 0,
+                    zIndex: Math.round(
+                        lerp(
+                            stripZ(Math.min(tier + 1, MAX_STACK - 1)),
+                            stripZ(tier),
+                            revealE
+                        )
+                    ),
+                    scatterFrac: 0,
+                    contentFrac: 0,
+                    isStrip: true,
+                    stackPos: tier,
+                    ...NO_MORPH,
+                    panelExpand: 0,
+                    stripReveal: revealE,
+                };
+            }
+
+            if (transitioning) {
+                const oldTier = i - (cardIndex + 1);
+                const oldStack = stackGeometry(stackAfter);
+                const from = stripLayout(oldTier, oldStack);
+                const previewE = delayedMorph(moveE);
+
+                return {
+                    visible: true,
+                    mode: "strip",
+                    left: lerp(from.left, to.left, moveE),
+                    width: lerp(from.width, to.width, moveE),
+                    previewW: lerp(from.previewW, to.previewW, previewE),
+                    previewTop: lerp(from.previewTop, to.previewTop, previewE),
+                    previewAspect: lerp(
+                        from.previewAspect,
+                        to.previewAspect,
+                        previewE
+                    ),
+                    slideX: 0,
+                    zIndex: Math.round(
+                        lerp(stripZ(oldTier), stripZ(tier), moveE)
+                    ),
+                    scatterFrac: 0,
+                    contentFrac: 0,
+                    isStrip: true,
+                    stackPos: tier,
+                    ...NO_MORPH,
+                    panelExpand: 0,
+                };
+            }
 
             return {
                 visible: true,
-                mode: "stack",
-                width: STRIP_W,
-                left: stageWidth - (stackCount - pos) * STRIP_W,
-                translateX: 0,
-                zIndex: 8 + pos,
-                scatterActive: false,
-                stripOnly: true,
+                mode: "strip",
+                ...to,
+                slideX: 0,
+                zIndex: stripZ(tier),
+                scatterFrac: 0,
+                contentFrac: 0,
+                isStrip: true,
+                stackPos: tier,
+                ...NO_MORPH,
+                panelExpand: 0,
             };
         }
 
         return hidden;
     };
 
-    const introOpacity =
-        phase === "intro"
-            ? 1
-            : phase === "opening"
-              ? Math.max(0, 1 - openFrac * 3.2)
-              : 0;
-    const introVisible = introOpacity > 0.02;
+    const introStripTotal = Math.min(MAX_STACK, PROJECTS.length);
+    const introGeom = stackGeometry(introStripTotal);
+    const introPanelW = stageWidth - introGeom.totalW;
+    const introFade =
+        phase === "opening"
+            ? Math.max(0, 1 - easeOnce(openFrac) * 1.1)
+            : 1;
+    const introVisible = phase !== "cards" && introFade > 0.02;
+
+    const heroImagePriority = (i: number) => {
+        const maxIdx = PROJECTS.length - 1;
+        const nearActive = Math.abs(i - cardIndex) <= 2;
+        const enteringNext =
+            i === cardIndex + 1 && cardFrac > 0 && cardIndex < maxIdx;
+        return nearActive || enteringNext || i === maxIdx;
+    };
 
     return (
         <>
@@ -460,21 +1114,28 @@ export default function Portfolio() {
                         pointerEvents: "none",
                     }}
                 />
-                <div className="pf-sticky">
-                    <div className="pf-bg" />
 
-                    <div
-                        className="pf-preload"
-                        aria-hidden="true"
-                    >
-                        {imageUrls.map((src) => (
+                <div className="pf-sticky">
+                    <div className="pf-preload" aria-hidden="true">
+                        {PRELOAD_MAIN_URLS.map((src) => (
                             <Image
-                                key={src}
+                                key={`main-${src}`}
+                                src={src}
+                                alt=""
+                                width={400}
+                                height={560}
+                                priority
+                                onLoad={() => markLoaded(src)}
+                                onError={() => markLoaded(src)}
+                            />
+                        ))}
+                        {PRELOAD_SCATTER_URLS.map((src) => (
+                            <Image
+                                key={`sc-${src}`}
                                 src={src}
                                 alt=""
                                 width={280}
                                 height={360}
-                                priority
                                 onLoad={() => markLoaded(src)}
                                 onError={() => markLoaded(src)}
                             />
@@ -500,20 +1161,68 @@ export default function Portfolio() {
                         </span>
                     </div>
 
+                    {layoutReady && introVisible && (
+                        <div
+                            className="pf-intro"
+                            style={{
+                                width: introPanelW,
+                                opacity: introFade,
+                            }}
+                        >
+                            <h1 className="pf-intro-title">Portfolio</h1>
+                            <p className="pf-intro-desc">
+                                The brand architecture for a home appliances
+                                company was designed with a focus on
+                                functionality and aesthetics, ensuring a
+                                seamless user experience across all touchpoints.
+                            </p>
+                            <ul className="pf-intro-tags">
+                                {INTRO_TAGS.map((tag) => (
+                                    <li
+                                        key={tag}
+                                        className={
+                                            tag === "Social Media Management"
+                                                ? "pf-intro-tag pf-intro-tag--active"
+                                                : "pf-intro-tag"
+                                        }
+                                    >
+                                        {tag}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
                     <div
-                        className="pf-intro"
-                        style={{
-                            opacity: introOpacity,
-                            visibility: introVisible ? "visible" : "hidden",
-                            pointerEvents: introVisible ? "auto" : "none",
-                        }}
+                        ref={heroMeasureRef}
+                        className="pf-hero-measure"
+                        aria-hidden="true"
                     >
-                        <h1 className="pf-intro-title">Portfolio</h1>
-                        <span className="pf-intro-index">01</span>
+                        <div className="pf-panel">
+                            <header className="pf-header pf-header--probe">
+                                <h2 className="pf-title">Probe</h2>
+                                <span className="pf-year">2025</span>
+                            </header>
+                            <div className="pf-scatter">
+                                <div
+                                    ref={heroProbeRef}
+                                    className="pf-scatter-main"
+                                />
+                            </div>
+                            <footer className="pf-footer pf-footer--probe">
+                                <span className="pf-about-label">Branding</span>
+                                <p className="pf-about-text">Probe layout</p>
+                            </footer>
+                        </div>
                     </div>
 
-                    <div ref={stageRef} className="pf-stage">
-                        {PROJECTS.map((project, i) => {
+                    <div
+                        ref={stageRef}
+                        className="pf-stage"
+                        suppressHydrationWarning
+                    >
+                        {layoutReady &&
+                            PROJECTS.map((project, i) => {
                             const layout = getCardLayout(i);
                             if (!layout.visible) return null;
 
@@ -524,82 +1233,208 @@ export default function Portfolio() {
                                     style={{
                                         width: layout.width,
                                         left: layout.left,
-                                        transform: `translateX(${layout.translateX}%)`,
+                                        transform: `translateX(${layout.slideX}%)`,
                                         zIndex: layout.zIndex,
+                                        opacity: layout.isStrip
+                                            ? layout.stripReveal
+                                            : 1,
+                                        ["--stack-pos" as string]:
+                                            layout.stackPos,
                                     }}
                                 >
                                     <div
-                                        className={`pf-card-panel ${
-                                            layout.stripOnly
-                                                ? "pf-card-panel--strip"
-                                                : ""
+                                        className={`pf-panel ${
+                                            layout.isStrip
+                                                ? "pf-panel--strip"
+                                                : layout.useMainMorph &&
+                                                    layout.panelExpand < 1
+                                                  ? "pf-panel--expanding"
+                                                  : ""
                                         }`}
+                                        style={{
+                                            ["--content-f" as string]:
+                                                layout.contentFrac,
+                                            ["--scatter-f" as string]:
+                                                layout.scatterFrac,
+                                            ["--panel-f" as string]:
+                                                layout.panelExpand,
+                                        }}
                                     >
-                                        {layout.stripOnly ? (
+                                        {layout.useMainMorph && (
+                                            <div
+                                                className="pf-main-morph"
+                                                style={{
+                                                    ["--mm" as string]:
+                                                        layout.mainMorph,
+                                                    ["--mm-sw" as string]: `${layout.morphStartW}px`,
+                                                    ["--mm-sh" as string]: `${layout.morphStartH}px`,
+                                                    ["--mm-st" as string]:
+                                                        layout.morphStartTop,
+                                                    ["--mm-ew" as string]: `${layout.heroEndW}px`,
+                                                    ["--mm-eh" as string]: `${layout.heroEndH}px`,
+                                                    ["--mm-et" as string]:
+                                                        layout.heroEndTopVh,
+                                                }}
+                                            >
+                                                <PfImg
+                                                    src={project.mainImage}
+                                                    alt={project.title}
+                                                    sizes="280px"
+                                                    priority={heroImagePriority(
+                                                        i
+                                                    )}
+                                                    imagesReady={imagesReady}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {layout.isStrip ? (
                                             <>
-                                                <div className="pf-strip-img">
+                                                <div
+                                                    className="pf-strip-preview"
+                                                    style={{
+                                                        ["--pv-w" as string]:
+                                                            layout.previewW,
+                                                        ["--pv-top" as string]:
+                                                            layout.previewTop,
+                                                        ["--pv-ar" as string]:
+                                                            layout.previewAspect,
+                                                    }}
+                                                >
                                                     <PfImg
-                                                        src={project.cover}
+                                                        src={project.mainImage}
                                                         alt=""
-                                                        sizes="60px"
+                                                        sizes="280px"
+                                                        priority={heroImagePriority(
+                                                            i
+                                                        )}
+                                                        imagesReady={
+                                                            imagesReady
+                                                        }
                                                     />
                                                 </div>
-                                                <span className="pf-strip-num">
+                                                <span
+                                                    className="pf-strip-num"
+                                                    style={{
+                                                        opacity:
+                                                            1 -
+                                                            layout.panelExpand *
+                                                                1.4,
+                                                    }}
+                                                >
                                                     {project.id}
                                                 </span>
                                             </>
                                         ) : (
                                             <>
-                                                <div className="pf-card-header">
-                                                    <h2 className="pf-card-title">
+                                                {layout.panelExpand < 0.92 && (
+                                                    <span
+                                                        className="pf-strip-num"
+                                                        style={{
+                                                            opacity: Math.max(
+                                                                0,
+                                                                1 -
+                                                                    layout.panelExpand *
+                                                                        1.4
+                                                            ),
+                                                        }}
+                                                    >
+                                                        {project.id}
+                                                    </span>
+                                                )}
+
+                                                <header className="pf-header">
+                                                    <h2 className="pf-title">
                                                         {project.title}
                                                     </h2>
-                                                    <span className="pf-card-year">
+                                                    <span className="pf-year">
                                                         {project.year}
                                                     </span>
-                                                </div>
+                                                </header>
 
-                                                <div
-                                                    className={`pf-scatter ${
-                                                        layout.scatterActive
-                                                            ? "pf-scatter--active"
-                                                            : ""
-                                                    }`}
-                                                >
+                                                <div className="pf-scatter">
                                                     {project.scatter.map(
-                                                        (src, j) => (
-                                                            <div
-                                                                key={j}
-                                                                className={`pf-scatter-item pf-scatter-item--${j}`}
-                                                            >
-                                                                <PfImg
-                                                                    src={src}
-                                                                    alt=""
-                                                                    sizes="180px"
-                                                                />
-                                                            </div>
-                                                        )
+                                                        (src, j) => {
+                                                            const off =
+                                                                SCATTER_OFFSETS[
+                                                                    j %
+                                                                        SCATTER_OFFSETS
+                                                                            .length
+                                                                ];
+                                                            const itemSf = EASE(
+                                                                clamp01(
+                                                                    (layout.scatterFrac -
+                                                                        j * 0.09) /
+                                                                        Math.max(
+                                                                            0.15,
+                                                                            1 -
+                                                                                j *
+                                                                                    0.09
+                                                                        )
+                                                                )
+                                                            );
+                                                            return (
+                                                                <div
+                                                                    key={j}
+                                                                    className="pf-scatter-item"
+                                                                    style={{
+                                                                        ["--sx" as string]: `${off.x}px`,
+                                                                        ["--sy" as string]: `${off.y}px`,
+                                                                        ["--sr" as string]: off.r,
+                                                                        ["--sf" as string]:
+                                                                            itemSf,
+                                                                    }}
+                                                                >
+                                                                    <PfImg
+                                                                        src={src}
+                                                                        alt=""
+                                                                        sizes="200px"
+                                                                        imagesReady={
+                                                                            imagesReady
+                                                                        }
+                                                                    />
+                                                                </div>
+                                                            );
+                                                        }
                                                     )}
-                                                    <div className="pf-scatter-main">
-                                                        <PfImg
-                                                            src={
-                                                                project.mainImage
-                                                            }
-                                                            alt={project.title}
-                                                            sizes="200px"
-                                                            priority={i <= 1}
-                                                        />
+                                                    <div
+                                                        className={`pf-scatter-main ${
+                                                            layout.useMainMorph
+                                                                ? "pf-scatter-main--morphing"
+                                                                : ""
+                                                        }`}
+                                                    >
+                                                        {!layout.useMainMorph && (
+                                                            <PfImg
+                                                                src={
+                                                                    project.mainImage
+                                                                }
+                                                                alt={
+                                                                    project.title
+                                                                }
+                                                                sizes="240px"
+                                                                priority={heroImagePriority(
+                                                                    i
+                                                                )}
+                                                                imagesReady={
+                                                                    imagesReady
+                                                                }
+                                                            />
+                                                        )}
                                                     </div>
                                                 </div>
 
-                                                <div className="pf-card-footer">
+                                                <footer className="pf-footer">
                                                     <span className="pf-about-label">
-                                                        {project.about}
+                                                        Branding
+                                                    </span>
+                                                    <span className="pf-about-label pf-about-label--second">
+                                                        Branding
                                                     </span>
                                                     <p className="pf-about-text">
                                                         {project.description}
                                                     </p>
-                                                </div>
+                                                </footer>
                                             </>
                                         )}
                                     </div>
@@ -620,11 +1455,18 @@ export default function Portfolio() {
                     background: #c4c4c4;
                 }
 
-                .pf-bg {
+                .pf-hero-measure {
                     position: absolute;
                     inset: 0;
-                    background: #c4c4c4;
-                    z-index: 0;
+                    z-index: -1;
+                    visibility: hidden;
+                    pointer-events: none;
+                }
+
+                .pf-header--probe,
+                .pf-footer--probe {
+                    opacity: 1;
+                    transform: none;
                 }
 
                 .pf-preload {
@@ -634,7 +1476,6 @@ export default function Portfolio() {
                     overflow: hidden;
                     opacity: 0;
                     pointer-events: none;
-                    z-index: -1;
                 }
 
                 .pf-loader {
@@ -647,7 +1488,7 @@ export default function Portfolio() {
                     justify-content: center;
                     gap: 16px;
                     background: #c4c4c4;
-                    transition: opacity 0.55s ease, visibility 0.55s ease;
+                    transition: opacity 0.5s ease, visibility 0.5s ease;
                 }
 
                 .pf-loader--done {
@@ -658,13 +1499,13 @@ export default function Portfolio() {
 
                 .pf-loader-label {
                     font-family: "Francy", serif;
-                    font-size: clamp(32px, 5vw, 56px);
-                    color: rgba(255, 255, 255, 0.9);
+                    font-size: 56px;
+                    color: #ffffff;
                     letter-spacing: -0.02em;
                 }
 
                 .pf-loader-track {
-                    width: min(200px, 40vw);
+                    width: 200px;
                     height: 2px;
                     background: rgba(0, 0, 0, 0.1);
                     border-radius: 2px;
@@ -686,39 +1527,62 @@ export default function Portfolio() {
                     letter-spacing: 0.06em;
                 }
 
+                /* ── Intro panel (left) ── */
                 .pf-intro {
                     position: absolute;
-                    inset: 0;
-                    z-index: 30;
+                    top: 0;
+                    left: 0;
+                    bottom: 0;
+                    z-index: 15;
                     display: flex;
                     flex-direction: column;
-                    align-items: center;
                     justify-content: center;
-                    background: #c4c4c4;
-                    will-change: opacity;
+                    padding: calc(var(--nav-h, 110px) + 32px) 72px 80px;
+                    pointer-events: none;
                 }
 
                 .pf-intro-title {
                     font-family: "Francy", serif;
-                    font-size: clamp(48px, 8vw, 96px);
+                    font-size: clamp(72px, 9.5vw, 128px);
                     font-weight: 400;
                     color: #ffffff;
+                    margin: 0 0 36px;
+                    line-height: 0.92;
+                    letter-spacing: -0.03em;
+                }
+
+                .pf-intro-desc {
+                    font-family: "Cormorant Garamond", Georgia, serif;
+                    font-size: 15px;
+                    font-weight: 300;
+                    color: rgba(45, 45, 45, 0.72);
+                    line-height: 1.75;
+                    margin: 0 0 48px;
+                    max-width: 480px;
+                }
+
+                .pf-intro-tags {
+                    list-style: none;
                     margin: 0;
-                    line-height: 1;
-                    letter-spacing: -0.02em;
+                    padding: 0;
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px 28px;
                 }
 
-                .pf-intro-index {
-                    position: absolute;
-                    bottom: clamp(32px, 6vh, 64px);
-                    left: 50%;
-                    transform: translateX(-50%);
+                .pf-intro-tag {
                     font-family: "Francy", serif;
-                    font-size: clamp(14px, 1.2vw, 18px);
-                    color: rgba(255, 255, 255, 0.85);
-                    letter-spacing: 0.05em;
+                    font-size: 14px;
+                    color: rgba(45, 45, 45, 0.38);
+                    letter-spacing: 0.01em;
                 }
 
+                .pf-intro-tag--active {
+                    color: rgba(30, 30, 30, 0.82);
+                    font-weight: 500;
+                }
+
+                /* ── Stage & cards ── */
                 .pf-stage {
                     position: absolute;
                     inset: 0;
@@ -732,32 +1596,211 @@ export default function Portfolio() {
                     will-change: transform, width, left;
                 }
 
-                .pf-card--stack {
-                    filter: drop-shadow(-8px 0 14px rgba(0, 0, 0, 0.14));
-                }
-
                 .pf-card--active,
                 .pf-card--entering {
-                    filter: drop-shadow(-10px 0 22px rgba(0, 0, 0, 0.16));
+                    filter: drop-shadow(8px 0 24px rgba(0, 0, 0, 0.14));
                 }
 
-                .pf-card--exiting {
-                    filter: drop-shadow(-6px 0 16px rgba(0, 0, 0, 0.1));
+                .pf-card--strip {
+                    filter: drop-shadow(
+                        -6px 0 16px rgba(0, 0, 0, 0.1)
+                    );
                 }
 
-                .pf-card-panel {
+                .pf-panel {
                     height: 100%;
                     background: #c4c4c4;
                     overflow: hidden;
                     display: flex;
                     flex-direction: column;
-                    padding: calc(var(--nav-h, 110px) + 12px) clamp(28px, 5vw, 72px)
-                        clamp(28px, 4vh, 48px);
+                    padding: calc(var(--nav-h, 110px) + 16px) 72px 56px;
                 }
 
-                .pf-card-panel--strip {
+                .pf-panel--strip {
                     padding: 0;
                     position: relative;
+                    border-left: 1px solid rgba(255, 255, 255, 0.18);
+                }
+
+                .pf-panel--expanding {
+                    position: relative;
+                    padding: calc(
+                            (var(--nav-h, 110px) + 16px) * var(--panel-f, 0)
+                        )
+                        calc(72px * var(--panel-f, 0))
+                        calc(56px * var(--panel-f, 0));
+                    border-left: 1px solid
+                        rgba(255, 255, 255, calc(0.18 * (1 - var(--panel-f, 0))));
+                }
+
+                .pf-main-morph {
+                    position: absolute;
+                    left: 50%;
+                    z-index: 12;
+                    overflow: hidden;
+                    background: #b8b8b8;
+                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.16);
+                    opacity: 1;
+                    transform: translateX(-50%);
+                    top: calc(
+                        (
+                                var(--mm-st) * (1 - var(--mm)) +
+                                    var(--mm-et) * var(--mm)
+                            ) * 100vh
+                    );
+                    width: calc(
+                        var(--mm-sw) * (1 - var(--mm)) + var(--mm-ew) * var(--mm)
+                    );
+                    height: calc(
+                        var(--mm-sh) * (1 - var(--mm)) + var(--mm-eh) * var(--mm)
+                    );
+                    pointer-events: none;
+                }
+
+                .pf-main-morph :global(img) {
+                    object-position: center center !important;
+                }
+
+                /* ── Tiered strip previews ── */
+                .pf-strip-preview {
+                    position: absolute;
+                    left: 50%;
+                    top: calc(var(--pv-top, 0.4) * 100vh);
+                    transform: translate(-50%, 0);
+                    width: calc(var(--pv-w, 0.85) * 100%);
+                    aspect-ratio: var(--pv-ar, 1.3);
+                    overflow: hidden;
+                    background: #b8b8b8;
+                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.16);
+                }
+
+                .pf-strip-preview :global(img) {
+                    object-position: center center !important;
+                }
+
+                .pf-strip-num {
+                    position: absolute;
+                    bottom: 44px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    font-family: "Francy", serif;
+                    font-size: clamp(22px, 2vw, 30px);
+                    font-weight: 400;
+                    color: rgba(255, 255, 255, 0.5);
+                    letter-spacing: 0.04em;
+                    z-index: 3;
+                }
+
+                /* ── Active card content ── */
+                .pf-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: flex-start;
+                    gap: 32px;
+                    margin-bottom: 20px;
+                    flex-shrink: 0;
+                    opacity: var(--content-f, 0);
+                    transform: translateY(
+                        calc((1 - var(--content-f, 0)) * 20px)
+                    );
+                }
+
+                .pf-title {
+                    font-family: "Francy", serif;
+                    font-size: clamp(28px, 3.8vw, 52px);
+                    font-weight: 400;
+                    color: #ffffff;
+                    margin: 0;
+                    line-height: 1.1;
+                    letter-spacing: -0.01em;
+                    text-transform: uppercase;
+                    max-width: 72%;
+                }
+
+                .pf-year {
+                    font-family: "Francy", serif;
+                    font-size: 18px;
+                    color: rgba(255, 255, 255, 0.65);
+                    flex-shrink: 0;
+                    padding-top: 6px;
+                }
+
+                .pf-scatter {
+                    position: relative;
+                    flex: 1;
+                    min-height: 280px;
+                    max-height: 46vh;
+                    margin: 8px auto 0;
+                    width: min(100%, 560px);
+                }
+
+                .pf-scatter-item,
+                .pf-scatter-main {
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    overflow: hidden;
+                    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.15);
+                }
+
+                .pf-scatter-item {
+                    width: 196px;
+                    height: 132px;
+                    z-index: 2;
+                    opacity: var(--sf, 0);
+                    transform: translate(-50%, -50%)
+                        translate(
+                            calc(var(--sx, 0px) * var(--sf, 0)),
+                            calc(var(--sy, 0px) * var(--sf, 0))
+                        )
+                        rotate(calc(var(--sr, 0) * var(--sf, 0) * 1deg))
+                        scale(calc(0.55 + 0.45 * var(--sf, 0)));
+                    filter: blur(calc((1 - var(--sf, 0)) * 3px));
+                }
+
+                .pf-scatter-main {
+                    width: 248px;
+                    height: 168px;
+                    z-index: 10;
+                    opacity: 1;
+                    transform: translate(-50%, -50%) scale(1);
+                }
+
+                .pf-scatter-main--morphing {
+                    opacity: 0;
+                    pointer-events: none;
+                }
+
+                .pf-footer {
+                    margin-top: auto;
+                    max-width: 560px;
+                    flex-shrink: 0;
+                    opacity: var(--content-f, 0);
+                    transform: translateY(
+                        calc((1 - var(--content-f, 0)) * 16px)
+                    );
+                }
+
+                .pf-about-label {
+                    display: inline-block;
+                    font-family: "Francy", serif;
+                    font-size: 14px;
+                    color: rgba(50, 50, 50, 0.55);
+                    margin-right: 20px;
+                    margin-bottom: 10px;
+                }
+
+                .pf-about-label--second {
+                    margin-right: 0;
+                }
+
+                .pf-about-text {
+                    font-family: "Cormorant Garamond", Georgia, serif;
+                    font-size: 15px;
+                    font-weight: 300;
+                    color: rgba(50, 50, 50, 0.78);
+                    line-height: 1.7;
+                    margin: 0;
                 }
 
                 .pf-img-wrap {
@@ -767,15 +1810,16 @@ export default function Portfolio() {
                 }
 
                 .pf-img-wrap :global(img) {
-                    opacity: 0;
-                    transition: opacity 0.45s ease;
+                    opacity: 1;
                 }
 
-                .pf-img-wrap--loaded :global(img) {
+                .pf-img-wrap--loaded :global(img),
+                .pf-img-wrap.pf-img-wrap--priority :global(img) {
                     opacity: 1;
                 }
 
                 .pf-img-shimmer {
+                    z-index: 1;
                     position: absolute;
                     inset: 0;
                     background: linear-gradient(
@@ -797,160 +1841,9 @@ export default function Portfolio() {
                     }
                 }
 
-                .pf-card-header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: flex-start;
-                    gap: 24px;
-                    margin-bottom: clamp(12px, 2vh, 24px);
-                    flex-shrink: 0;
-                }
-
-                .pf-card-title {
-                    font-family: "Francy", serif;
-                    font-size: clamp(22px, 3.2vw, 42px);
-                    font-weight: 400;
-                    color: #ffffff;
-                    margin: 0;
-                    line-height: 1.15;
-                    letter-spacing: -0.01em;
-                    max-width: 70%;
-                }
-
-                .pf-card-year {
-                    font-family: "Francy", serif;
-                    font-size: clamp(14px, 1.2vw, 18px);
-                    color: rgba(255, 255, 255, 0.7);
-                    flex-shrink: 0;
-                }
-
-                .pf-scatter {
-                    position: relative;
-                    flex: 1;
-                    min-height: 200px;
-                    max-height: 38vh;
-                    margin: 0 auto;
-                    width: min(100%, 500px);
-                }
-
-                .pf-scatter-item,
-                .pf-scatter-main {
-                    position: absolute;
-                    top: 50%;
-                    left: 50%;
-                    overflow: hidden;
-                    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.16);
-                }
-
-                .pf-scatter-item {
-                    width: clamp(96px, 13vw, 140px);
-                    height: clamp(124px, 17vw, 176px);
-                    z-index: 1;
-                    transform: translate(-50%, -50%) scale(0.15);
-                    opacity: 0;
-                    transition:
-                        transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
-                        opacity 0.3s ease;
-                }
-
-                .pf-scatter-main {
-                    width: clamp(116px, 15vw, 168px);
-                    height: clamp(190px, 26vw, 290px);
-                    z-index: 10;
-                    transform: translate(-50%, -50%) scale(0.4);
-                    opacity: 0;
-                    transition:
-                        transform 0.4s cubic-bezier(0.22, 1, 0.36, 1),
-                        opacity 0.28s ease;
-                }
-
-                .pf-scatter--active .pf-scatter-main {
-                    transform: translate(-50%, -50%) scale(1);
-                    opacity: 1;
-                }
-
-                .pf-scatter--active .pf-scatter-item {
-                    opacity: 1;
-                }
-
-                .pf-scatter--active .pf-scatter-item--0 {
-                    transform: translate(calc(-50% - 120px), calc(-50% - 28px))
-                        rotate(-13deg) scale(1);
-                    transition-delay: 0.03s;
-                }
-
-                .pf-scatter--active .pf-scatter-item--1 {
-                    transform: translate(calc(-50% + 112px), calc(-50% - 44px))
-                        rotate(9deg) scale(1);
-                    transition-delay: 0.06s;
-                }
-
-                .pf-scatter--active .pf-scatter-item--2 {
-                    transform: translate(calc(-50% - 92px), calc(-50% + 54px))
-                        rotate(-7deg) scale(1);
-                    transition-delay: 0.09s;
-                }
-
-                .pf-scatter--active .pf-scatter-item--3 {
-                    transform: translate(calc(-50% + 100px), calc(-50% + 46px))
-                        rotate(11deg) scale(1);
-                    transition-delay: 0.12s;
-                }
-
-                .pf-card-footer {
-                    margin-top: auto;
-                    max-width: 520px;
-                    flex-shrink: 0;
-                }
-
-                .pf-about-label {
-                    display: block;
-                    font-family: "Francy", serif;
-                    font-size: clamp(13px, 1.1vw, 15px);
-                    color: rgba(50, 50, 50, 0.6);
-                    margin-bottom: 8px;
-                }
-
-                .pf-about-text {
-                    font-family: "Cormorant Garamond", Georgia, serif;
-                    font-size: clamp(13px, 1.05vw, 15px);
-                    font-weight: 300;
-                    color: rgba(50, 50, 50, 0.75);
-                    line-height: 1.7;
-                    margin: 0;
-                }
-
-                .pf-strip-img {
-                    position: absolute;
-                    inset: 0;
-                }
-
-                .pf-strip-img::after {
-                    content: "";
-                    position: absolute;
-                    inset: 0;
-                    box-shadow: inset 6px 0 12px rgba(0, 0, 0, 0.12);
-                    pointer-events: none;
-                    z-index: 2;
-                }
-
-                .pf-strip-num {
-                    position: absolute;
-                    bottom: clamp(24px, 4vh, 48px);
-                    left: 50%;
-                    transform: translateX(-50%) rotate(-90deg);
-                    font-family: "Francy", serif;
-                    font-size: 13px;
-                    color: rgba(255, 255, 255, 0.85);
-                    letter-spacing: 0.08em;
-                    white-space: nowrap;
-                    z-index: 3;
-                }
-
-                @media (max-width: 768px) {
-                    .pf-scatter--active .pf-scatter-item--2,
-                    .pf-scatter--active .pf-scatter-item--3 {
-                        opacity: 0;
+                @media (prefers-reduced-motion: reduce) {
+                    .pf-img-shimmer {
+                        animation: none;
                     }
                 }
             `}</style>
