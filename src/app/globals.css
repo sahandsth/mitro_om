@@ -79,17 +79,26 @@ body {
 }
 @media (max-width: 768px) {
     .hero-nav {
-        padding: 20px 24px 0;
+        padding: 20px clamp(14px, 5vw, 24px) 0;
+        gap: clamp(8px, 3vw, 16px);
     }
 
     .hero-nav-links {
-        gap: 28px;
+        gap: clamp(14px, 5vw, 28px);
         padding-right: 0;
+        flex-wrap: nowrap;
+        min-width: 0;
     }
 
     .hero-nav-links a,
     .hero-nav-btn {
-        font-size: 13px;
+        font-size: clamp(10px, 3vw, 14px);
+        white-space: nowrap;
+    }
+
+    .logo-img {
+        width: clamp(32px, 9vw, 45px);
+        height: auto;
     }
 
     .hero-script-word {
