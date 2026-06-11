@@ -60,13 +60,13 @@ const PROJECTS = [
     },
     {
         id: "02",
-        title: "Aurora Studio Collective",
+        title: "Stra Technology",
         year: "2024",
-        about: "About Aurora Studio Collective",
+        about: "About Stra Technology",
         description:
             "Visual identity and web presence for a creative studio — bold typography, motion-led brand assets, and a portfolio site designed to showcase multidisciplinary work.",
-        mainImage: "https://picsum.photos/seed/aur-main/400/700",
-        cover: "https://picsum.photos/seed/aur-cover/300/800",
+        mainImage: "/images/portfolio/ST/1.png",
+        cover: "/images/portfolio/ST/Main.png",
         scatter: [
             "https://picsum.photos/seed/aur-s1/280/360",
             "https://picsum.photos/seed/aur-s2/280/360",
