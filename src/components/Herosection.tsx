@@ -54,32 +54,6 @@ function getViewport() {
     };
 }
 
-/** کادر مشکی گوشی (bezel) دور سوراخ صفحه — برای حس «گوشی» وقتی کوچک است */
-function drawPhoneBezel(
-    ctx: CanvasRenderingContext2D,
-    screen: { x: number; y: number; w: number; h: number; r: number },
-    bezel: number
-) {
-    if (bezel <= 0.5) return;
-
-    const x = screen.x - bezel;
-    const y = screen.y - bezel;
-    const w = screen.w + bezel * 2;
-    const h = screen.h + bezel * 2;
-    const r = screen.r + bezel;
-
-    ctx.save();
-    ctx.fillStyle = "#0b0b0d";
-    ctx.beginPath();
-    if (typeof ctx.roundRect === "function") {
-        ctx.roundRect(x, y, w, h, r);
-    } else {
-        ctx.rect(x, y, w, h);
-    }
-    ctx.fill();
-    ctx.restore();
-}
-
 function drawCover(
     ctx: CanvasRenderingContext2D,
     img: HTMLImageElement,
@@ -319,11 +293,6 @@ export default function HeroSection() {
 
             const coverScale = Math.max(screen.w / vw, screen.h / vh);
 
-            // کادر مشکی گوشی: وقتی کوچک است پررنگ، با بزرگ شدن صفحه محو می‌شود
-            const bezel =
-                Math.min(screen.h * 0.12, 48) * Math.max(0, 1 - coverScale);
-            drawPhoneBezel(ctx, screen, bezel);
-
             punchScreenHole(ctx, screen.x, screen.y, screen.w, screen.h, screen.r);
 
             if (isViewportFullscreenScreen(screen, vw, vh) || coverScale >= 0.96) {
@@ -490,7 +459,7 @@ export default function HeroSection() {
                     width: 100%;
                     height: 100vh;
                     overflow: hidden;
-                    background: #141414;
+                    background: #ffffff;
                 }
 
                 .hero-clip {
