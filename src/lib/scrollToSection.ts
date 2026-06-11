@@ -1,3 +1,5 @@
+import { smoothScrollTo } from "@/lib/lenisStore";
+
 export function getNavHeight() {
     if (typeof window === "undefined") return 110;
     return (
@@ -23,6 +25,10 @@ export function scrollToSection(id: string) {
     const el = document.getElementById(anchorId);
     if (!el) return;
 
-    const top = el.getBoundingClientRect().top + window.scrollY;
-    window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    const top = Math.max(0, el.getBoundingClientRect().top + window.scrollY);
+
+    // Prefer Lenis so the jump rides the same momentum curve as wheel scroll.
+    if (smoothScrollTo(top, { duration: 1.1 })) return;
+
+    window.scrollTo({ top, behavior: "smooth" });
 }

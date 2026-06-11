@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+
 export function HeroFonts() {
     return (
         <style>{`
@@ -38,9 +40,46 @@ export default function HeroContent({
 }: HeroContentProps) {
     const word = scrollWord ?? DEFAULT_WORDS[wordIndex] ?? DEFAULT_WORDS[0];
 
+    const rootRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const root = rootRef.current;
+        if (!root) return;
+        if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches)
+            return;
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+        const target = { x: 0, y: 0 };
+        const cur = { x: 0, y: 0 };
+        let raf = 0;
+
+        const onMove = (e: MouseEvent) => {
+            target.x = (e.clientX / window.innerWidth - 0.5) * 2;
+            target.y = (e.clientY / window.innerHeight - 0.5) * 2;
+        };
+
+        const loop = () => {
+            cur.x += (target.x - cur.x) * 0.06;
+            cur.y += (target.y - cur.y) * 0.06;
+            root.style.setProperty("--px", cur.x.toFixed(3));
+            root.style.setProperty("--py", cur.y.toFixed(3));
+            raf = requestAnimationFrame(loop);
+        };
+
+        window.addEventListener("mousemove", onMove, { passive: true });
+        raf = requestAnimationFrame(loop);
+        return () => {
+            window.removeEventListener("mousemove", onMove);
+            cancelAnimationFrame(raf);
+        };
+    }, []);
+
     return (
         <>
-            <div className={`hero-sticky${embedded ? " hero-embedded" : ""}`}>
+            <div
+                ref={rootRef}
+                className={`hero-sticky${embedded ? " hero-embedded" : ""}`}
+            >
                 <div className="hero-bg" />
 
                 <div className="hero-center">
@@ -91,11 +130,17 @@ export default function HeroContent({
 
                 .hero-bg {
                     position: absolute;
-                    inset: 0;
+                    inset: -4%;
                     background:
                         radial-gradient(ellipse at 58% 50%, #ffffff 0%, transparent 52%),
                         linear-gradient(148deg, #c4c4c4 0%, #d6d6d6 28%, #e3e3e3 58%, #c9c9c9 100%);
                     z-index: 0;
+                    transform: translate3d(
+                        calc(var(--px, 0) * 16px),
+                        calc(var(--py, 0) * 16px),
+                        0
+                    );
+                    will-change: transform;
                 }
 
                 .hero-bg::after {
@@ -121,6 +166,12 @@ export default function HeroContent({
                     user-select: none;
                     gap: 1px;
                     padding-top: var(--nav-h, 110px);
+                    transform: translate3d(
+                        calc(var(--px, 0) * -9px),
+                        calc(var(--py, 0) * -9px),
+                        0
+                    );
+                    will-change: transform;
                 }
 
                 .hero-static {

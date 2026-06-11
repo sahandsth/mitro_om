@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { scrollToSection } from "@/lib/scrollToSection";
+import Spotlight from "@/components/effects/Spotlight";
 
 const EXPLORE_LINKS = [
     { label: "Portfolio", id: "portfolio" },
@@ -20,6 +21,7 @@ const SOCIAL_LINKS = [
 export default function Footer() {
     return (
         <footer id="contacts" className="ft">
+            <Spotlight color="rgba(255, 255, 255, 0.08)" size={640} />
             <p className="ft-watermark" aria-hidden="true">
                 MITRO TEAM
             </p>

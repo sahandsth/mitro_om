@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { smoothScrollTo } from "@/lib/lenisStore";
+import { useCharReveal } from "@/lib/useCharReveal";
+import ImageTrail from "@/components/effects/ImageTrail";
 
 /** Shared cache so PfImg stays visible across strip ↔ morph remounts */
 const loadedImageUrls = new Set<string>();
@@ -144,6 +147,9 @@ const ALL_IMAGE_URLS = PROJECTS.flatMap((p) => [
     p.mainImage,
     ...p.scatter,
 ]);
+
+/** Curated thumbnails for the cursor image-trail over the portfolio. */
+const TRAIL_IMAGES = PROJECTS.map((p) => p.mainImage);
 
 /** Main heroes first so the last slide is preloaded before the user reaches it */
 const PRELOAD_MAIN_URLS = PROJECTS.map((p) => p.mainImage);
@@ -450,6 +456,8 @@ function PfImg({
 function PortfolioDesktop() {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const stageRef = useRef<HTMLDivElement>(null);
+    const introTitleRef = useRef<HTMLHeadingElement>(null);
+    useCharReveal(introTitleRef, { start: "top 95%" });
     const heroMeasureRef = useRef<HTMLDivElement>(null);
     const heroProbeRef = useRef<HTMLDivElement>(null);
     const [stageWidth, setStageWidth] = useState(0);
@@ -734,9 +742,11 @@ function PortfolioDesktop() {
 
         if (Math.abs(targetScrolled - scrolled) < 6) return;
 
-        const targetY = window.scrollY + rect.top + targetScrolled;
+        const targetY = Math.max(0, window.scrollY + rect.top + targetScrolled);
         snapLockRef.current = true;
-        window.scrollTo({ top: Math.max(0, targetY), behavior: "smooth" });
+        if (!smoothScrollTo(targetY, { duration: 0.7 })) {
+            window.scrollTo({ top: targetY, behavior: "smooth" });
+        }
         window.setTimeout(() => {
             snapLockRef.current = false;
         }, 700);
@@ -1186,6 +1196,7 @@ function PortfolioDesktop() {
                 />
 
                 <div className="pf-sticky">
+                    <ImageTrail images={TRAIL_IMAGES} />
                     <div className="pf-preload" aria-hidden="true">
                         {PRELOAD_MAIN_URLS.map((src) => (
                             <Image
@@ -1239,7 +1250,9 @@ function PortfolioDesktop() {
                                 opacity: introFade,
                             }}
                         >
-                            <h1 className="pf-intro-title">Portfolio</h1>
+                            <h1 ref={introTitleRef} className="pf-intro-title">
+                                Portfolio
+                            </h1>
                             <p className="pf-intro-desc">
                                 The brand architecture for a home appliances
                                 company was designed with a focus on
@@ -1300,6 +1313,9 @@ function PortfolioDesktop() {
                                 <div
                                     key={project.id}
                                     className={`pf-card pf-card--${layout.mode}`}
+                                    data-cursor-label={
+                                        layout.isStrip ? undefined : "View"
+                                    }
                                     style={{
                                         width: layout.width,
                                         left: layout.left,

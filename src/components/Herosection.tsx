@@ -417,6 +417,7 @@ export default function HeroSection() {
                 id="home"
                 ref={wrapperRef}
                 className="hero-wrapper"
+                data-cursor-light
                 style={
                     isDesktop
                         ? undefined

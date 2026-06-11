@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Footer from "@/components/Footer";
 import AboutMobile from "@/components/AboutMobile";
+import { getLenis } from "@/lib/lenisStore";
+import { useCharReveal } from "@/lib/useCharReveal";
 
 const MOBILE_QUERY = "(max-width: 768px)";
 
@@ -76,6 +78,8 @@ type Phase = "intro" | "peel" | "assemble" | "final" | "reveal" | "revealed";
 function AboutDesktop() {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const stageRef = useRef<HTMLDivElement>(null);
+    const titleRef = useRef<HTMLHeadingElement>(null);
+    useCharReveal(titleRef, { start: "top 90%" });
     const [stageSize, setStageSize] = useState({ w: 0, h: 0 });
     const [phase, setPhase] = useState<Phase>("intro");
     const [peelIndex, setPeelIndex] = useState(0);
@@ -258,6 +262,20 @@ function AboutDesktop() {
         };
 
         const animateTo = (targetY: number) => {
+            const lenis = getLenis();
+            if (lenis) {
+                isSnapping = true;
+                const dist = Math.abs(targetY - window.scrollY);
+                const duration = Math.min(0.7, Math.max(0.3, dist * 0.0006));
+                lenis.scrollTo(targetY, {
+                    duration,
+                    onComplete: () => {
+                        isSnapping = false;
+                    },
+                });
+                return;
+            }
+
             isSnapping = true;
             const startY = window.scrollY;
             const dist = targetY - startY;
@@ -664,7 +682,7 @@ function AboutDesktop() {
                     className={`ab-text ${textCentered ? "ab-text--centered" : ""}`}
                     style={{ opacity: textOpacity() }}
                 >
-                    <h2 className="ab-title">About Us</h2>
+                    <h2 ref={titleRef} className="ab-title">About Us</h2>
                     <p className="ab-desc">
                         We are a small team of three — each bringing a distinct
                         craft to every project. Together we cover strategy,

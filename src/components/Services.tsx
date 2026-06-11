@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import Image from "next/image";
+import { useCharReveal } from "@/lib/useCharReveal";
+import Spotlight from "@/components/effects/Spotlight";
 
 export const SERVICES = [
 
@@ -87,6 +89,8 @@ export const SERVICES = [
 
 export default function ServicesSection() {
     const sectionRef = useRef<HTMLElement>(null);
+    const headingRef = useRef<HTMLHeadingElement>(null);
+    useCharReveal(headingRef, { start: "top 92%" });
 
     useEffect(() => {
         const root = sectionRef.current;
@@ -162,11 +166,12 @@ export default function ServicesSection() {
             <div className="svc-bg" />
             <div className="svc-bg-glow" />
             <div className="svc-bg-noise" aria-hidden="true" />
+            <Spotlight color="rgba(255, 255, 255, 0.06)" size={620} />
 
             <div className="svc-inner">
                 <header className="svc-header" data-reveal>
                     <span className="svc-eyebrow">Services</span>
-                    <h2 className="svc-heading">
+                    <h2 ref={headingRef} className="svc-heading">
                         What we craft for ambitious brands
                     </h2>
                     <span className="svc-count">
@@ -202,6 +207,7 @@ export default function ServicesSection() {
                                         <div
                                             key={j}
                                             className="svc-grid-cell"
+                                            data-cursor-label="View"
                                             style={{
                                                 ["--d" as string]: `${j * 0.09}s`,
                                             }}
