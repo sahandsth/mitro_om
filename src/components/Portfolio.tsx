@@ -225,7 +225,22 @@ const portfolioEdgeExit = (
     return false;
 };
 
-/** Snap target inside the portfolio track (px), biased by scroll direction. */
+/**
+ * Fraction of the gap between two rest points the user must travel before the
+ * snap commits to the next/previous one. Kept low so a single normal scroll
+ * gesture is enough to advance — they no longer have to fight to open a layer.
+ */
+const SNAP_COMMIT = 0.32;
+
+/**
+ * Snap target inside the portfolio track (px).
+ *
+ * Every project settles at the centre of its hold band; the intro top and the
+ * exit form the two outer rest points. We land on whichever bounding anchor the
+ * user is heading toward: scrolling forward commits to the next anchor after
+ * only ~SNAP_COMMIT of the gap (and likewise backward), so one scroll is enough
+ * to open the next layer while small nudges still settle back into place.
+ */
 const snapPortfolioScrolled = (
     scrolled: number,
     vh: number,
@@ -243,53 +258,34 @@ const snapPortfolioScrolled = (
     const maxIdx = cardCount - 1;
     const maxScroll = portfolioMaxScroll(vh, totalVh);
 
-    if (scrolled <= 0) return scrolled;
-    if (scrolled >= maxScroll) return scrolled;
-
-    if (scrolled < introEnd) {
-        if (direction > 0) return introEnd;
-        if (direction < 0) return scrolled;
-        return scrolled < introEnd * 0.5 ? scrolled : introEnd;
-    }
-
-    if (scrolled < openEnd) {
-        if (direction > 0) return openEnd;
-        if (direction < 0) return introEnd;
-        const mid = (introEnd + openEnd) * 0.5;
-        return scrolled < mid ? introEnd : openEnd;
-    }
+    if (scrolled <= 0) return 0;
+    if (scrolled >= maxScroll) return maxScroll;
 
     const holdCenter = (idx: number) =>
         openEnd + idx * perCard + holdRatio * perCard * 0.5;
-    const segmentStart = (idx: number) => openEnd + idx * perCard;
 
-    const raw = (scrolled - openEnd) / perCard;
-    const idx = Math.min(Math.floor(raw), maxIdx);
-    const seg = raw - idx;
+    const anchors = [0];
+    for (let idx = 0; idx <= maxIdx; idx++) anchors.push(holdCenter(idx));
+    anchors.push(maxScroll);
 
-    if (idx >= maxIdx) {
-        const lastHold = holdCenter(maxIdx);
-        const tailLen = maxScroll - lastHold;
-
-        if (direction > 0) {
-            if (seg > holdRatio || scrolled >= lastHold + tailLen * 0.2) {
-                return maxScroll;
-            }
-            return lastHold;
+    let k = 0;
+    for (let i = 0; i < anchors.length - 1; i++) {
+        if (scrolled >= anchors[i] && scrolled <= anchors[i + 1]) {
+            k = i;
+            break;
         }
-        if (direction < 0) return lastHold;
-
-        const exitMid = lastHold + tailLen * 0.45;
-        return scrolled >= exitMid ? maxScroll : lastHold;
     }
 
-    if (seg <= holdRatio) return holdCenter(idx);
+    const lo = anchors[k];
+    const hi = anchors[k + 1];
+    const gap = hi - lo;
+    if (gap <= 0) return lo;
 
-    if (direction > 0) return segmentStart(idx + 1);
-    if (direction < 0) return holdCenter(idx);
+    const frac = (scrolled - lo) / gap;
 
-    const transMid = holdRatio + (1 - holdRatio) * 0.5;
-    return seg < transMid ? holdCenter(idx) : segmentStart(idx + 1);
+    if (direction > 0) return frac >= SNAP_COMMIT ? hi : lo;
+    if (direction < 0) return frac <= 1 - SNAP_COMMIT ? lo : hi;
+    return frac < 0.5 ? lo : hi;
 };
 
 type Phase = "intro" | "opening" | "cards";
@@ -470,6 +466,7 @@ export default function Portfolio() {
     const scatterRafRef = useRef(0);
     const scatterSessionRef = useRef("");
     const scatterDoneRef = useRef(false);
+    const scatterIndexRef = useRef(-1);
     const snapLockRef = useRef(false);
     const snapTimerRef = useRef(0);
     const lastPortfolioScrolledRef = useRef<number | null>(null);
@@ -479,13 +476,14 @@ export default function Portfolio() {
     const { progress: loadProgress, ready: imagesReady, markLoaded } =
         usePreloadProgress(imageUrls.length);
 
-    const INTRO_VH = 0.4;
-    const OPEN_VH = 0.6;
-    const CARD_VH = 1.3;
-    const HOLD_RATIO = 0.48;
+    const INTRO_VH = 0.25;
+    const OPEN_VH = 0.45;
+    const CARD_VH = 1.0;
+    const HOLD_RATIO = 0.25;
+    const TAIL_VH = 0.4;
 
     const totalVh =
-        INTRO_VH + OPEN_VH + PROJECTS.length * CARD_VH + 0.5;
+        INTRO_VH + OPEN_VH + PROJECTS.length * CARD_VH + TAIL_VH;
 
     const layoutVh = Math.max(viewportH, 900);
 
@@ -555,6 +553,17 @@ export default function Portfolio() {
         measureHeroTarget();
     }, [measureHeroTarget, stageWidth, viewportH]);
 
+    // Reset the scatter to "tucked in" synchronously the moment a different card
+    // becomes active, so the freshly-landed card never paints a single frame
+    // with the previous card's fully-scattered value (which looked like the
+    // images flashing back in and out again).
+    useLayoutEffect(() => {
+        if (cardIndex !== scatterIndexRef.current) {
+            scatterIndexRef.current = cardIndex;
+            setAutoScatter(0);
+        }
+    }, [cardIndex]);
+
     useEffect(() => {
         if (!imagesReady) return;
 
@@ -566,8 +575,10 @@ export default function Portfolio() {
                 cardFrac > 0);
 
         if (expanding) {
+            // Pause the running scatter, but keep the "done" flag intact: a tiny
+            // forward nudge that snaps back to the same card must NOT replay the
+            // animation. Replays are keyed on cardIndex below.
             cancelAnimationFrame(scatterRafRef.current);
-            scatterDoneRef.current = false;
             return;
         }
 

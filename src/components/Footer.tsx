@@ -21,7 +21,7 @@ export default function Footer() {
     return (
         <footer id="contacts" className="ft">
             <p className="ft-watermark" aria-hidden="true">
-                MITRO AGENCY
+                MITRO TEAM
             </p>
 
             <div className="ft-shell">
@@ -77,7 +77,7 @@ export default function Footer() {
                     <div className="ft-logo">
                         <Image
                             src="/Logo.png"
-                            alt="Mitro Agency"
+                            alt="Mitro Team"
                             width={56}
                             height={56}
                             className="ft-logo-img"
@@ -88,7 +88,7 @@ export default function Footer() {
                 <div className="ft-bottom">
                     <span className="ft-cta">Lets Work Together</span>
                     <span className="ft-credits">
-                        Mitro Agency 2026 / Oman / Site Credits
+                        Mitro Team 2026 / Oman / Site Credits
                     </span>
                 </div>
             </div>

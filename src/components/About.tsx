@@ -62,14 +62,14 @@ export default function About() {
     const [assembleFrac, setAssembleFrac] = useState(0);
     const [revealFrac, setRevealFrac] = useState(0);
 
-    const INTRO_VH = 0.5;
-    const PEEL_VH = 1;
-    const PEEL_HOLD = 0.38;
-    const ASSEMBLE_VH = 1.6;
-    const ASSEMBLE_ANIM = 0.92;
-    const FINAL_HOLD_VH = 1.75;
-    const REVEAL_VH = 1.45;
-    const FOOTER_HOLD_VH = 0.9;
+    const INTRO_VH = 0.35;
+    const PEEL_VH = 0.55;
+    const PEEL_HOLD = 0.22;
+    const ASSEMBLE_VH = 0.8;
+    const ASSEMBLE_ANIM = 0.86;
+    const FINAL_HOLD_VH = 0.4;
+    const REVEAL_VH = 1.0;
+    const FOOTER_HOLD_VH = 1.1;
 
     const totalVh =
         INTRO_VH +
@@ -176,8 +176,8 @@ export default function About() {
                 setPeelIndex(TEAM.length - 1);
                 setPeelFrac(1);
                 setAssembleFrac(1);
-                const raw = (scrolled - finalHoldEnd) / (REVEAL_VH * vh);
-                setRevealFrac(EASE_IN_OUT_CUBIC(raw));
+                const raw = clamp01((scrolled - finalHoldEnd) / (REVEAL_VH * vh));
+                setRevealFrac(raw);
                 return;
             }
 
@@ -194,6 +194,119 @@ export default function About() {
         return () => {
             window.removeEventListener("scroll", handleScroll);
             window.removeEventListener("resize", handleScroll);
+        };
+    }, []);
+
+    // Scroll-snap: when scrolling stops, glide to the nearest stable rest
+    // state so cards never get stuck mid-animation.
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const reduceMotion = window.matchMedia(
+            "(prefers-reduced-motion: reduce)"
+        ).matches;
+        if (reduceMotion) return;
+
+        let scrollTimer: ReturnType<typeof setTimeout> | null = null;
+        let rafId = 0;
+        let isSnapping = false;
+        let lastY = window.scrollY;
+        let dir = 1;
+
+        const wrapperTop = () => {
+            const wrapper = wrapperRef.current;
+            if (!wrapper) return 0;
+            return window.scrollY + wrapper.getBoundingClientRect().top;
+        };
+
+        const snapPoints = (vh: number) => {
+            const introEnd = INTRO_VH * vh;
+            const perPeel = PEEL_VH * vh;
+            const peelEnd = introEnd + TEAM.length * perPeel;
+            const assembleEnd = peelEnd + ASSEMBLE_VH * vh;
+            const finalHoldEnd = assembleEnd + FINAL_HOLD_VH * vh;
+            const revealEnd = finalHoldEnd + REVEAL_VH * vh;
+
+            const points = [0];
+            for (let i = 0; i < TEAM.length; i++) {
+                // middle of the hold after card i has fully docked
+                points.push(introEnd + (i + 1 - PEEL_HOLD * 0.5) * perPeel);
+            }
+            points.push(finalHoldEnd - FINAL_HOLD_VH * vh * 0.5);
+            points.push(revealEnd);
+            return { points, revealEnd };
+        };
+
+        const animateTo = (targetY: number) => {
+            isSnapping = true;
+            const startY = window.scrollY;
+            const dist = targetY - startY;
+            const duration = Math.min(
+                700,
+                Math.max(280, Math.abs(dist) * 0.6)
+            );
+            let startTime: number | null = null;
+            const step = (ts: number) => {
+                if (startTime === null) startTime = ts;
+                const t = clamp01((ts - startTime) / duration);
+                window.scrollTo(0, startY + dist * EASE_IN_OUT_CUBIC(t));
+                if (t < 1) {
+                    rafId = requestAnimationFrame(step);
+                } else {
+                    isSnapping = false;
+                }
+            };
+            rafId = requestAnimationFrame(step);
+        };
+
+        const trySnap = () => {
+            if (isSnapping || !wrapperRef.current) return;
+            const vh = window.innerHeight;
+            const top = wrapperTop();
+            const scrolled = window.scrollY - top;
+            const { points, revealEnd } = snapPoints(vh);
+
+            // Only snap inside the About animation zone; leave the footer
+            // hold free so the user can exit downward.
+            if (scrolled < -8 || scrolled > revealEnd + 8) return;
+
+            // Snap in the direction of travel: scrolling down commits to the
+            // next rest state forward, scrolling up to the previous one.
+            const eps = 2;
+            let target: number | null = null;
+            if (dir >= 0) {
+                for (const p of points) {
+                    if (p > scrolled + eps) {
+                        target = p;
+                        break;
+                    }
+                }
+            } else {
+                for (let i = points.length - 1; i >= 0; i--) {
+                    if (points[i] < scrolled - eps) {
+                        target = points[i];
+                        break;
+                    }
+                }
+            }
+            if (target === null) return;
+            animateTo(top + target);
+        };
+
+        const onScroll = () => {
+            if (isSnapping) return;
+            const y = window.scrollY;
+            if (y > lastY) dir = 1;
+            else if (y < lastY) dir = -1;
+            lastY = y;
+            if (scrollTimer) clearTimeout(scrollTimer);
+            scrollTimer = setTimeout(trySnap, 150);
+        };
+
+        window.addEventListener("scroll", onScroll, { passive: true });
+        return () => {
+            window.removeEventListener("scroll", onScroll);
+            if (scrollTimer) clearTimeout(scrollTimer);
+            if (rafId) cancelAnimationFrame(rafId);
         };
     }, []);
 
@@ -240,25 +353,25 @@ export default function About() {
         return { cardW, cardH, gap, startX, y };
     };
 
-    const STACK_OFFSET_X = 22;
-    const STACK_OFFSET_Y = 14;
+    const STACK_OFFSET_X = 20;
+    const STACK_OFFSET_Y = 16;
 
     const getStackPos = (depth: number): CardLayout => {
         const { w: cw, h: ch } = stackCardSize();
-        const padLeft = 72;
+        const padLeft = Math.max(72, stageSize.w * 0.085);
         const anchorX = padLeft;
         const anchorY = stageSize.h * 0.5 - ch / 2;
         return {
-            x: anchorX - depth * STACK_OFFSET_X,
-            y: anchorY - depth * STACK_OFFSET_Y,
+            x: anchorX + depth * STACK_OFFSET_X,
+            y: anchorY + depth * STACK_OFFSET_Y,
             width: cw,
             height: ch,
             zIndex: 12 - depth,
             opacity: 1,
-            rotateZ: depth * -0.6,
+            rotateZ: depth * 1.6,
             rotateY: 0,
-            scale: 1 - depth * 0.018,
-            shadow: 0.18 + depth * 0.04,
+            scale: 1 - depth * 0.035,
+            shadow: 0.2 + depth * 0.05,
         };
     };
 
@@ -443,8 +556,8 @@ export default function About() {
         const pad = Math.min(Math.max(vw * 0.048, 48), 62);
         const originX = pad;
 
-        const rotateZ = -e * 21;
-        const translateY = -e * vh * 0.36;
+        const rotateZ = -e * 17;
+        const translateY = -e * vh * 0.46;
         const translateX = 0;
 
         return {
@@ -463,6 +576,10 @@ export default function About() {
     const vw = stageSize.w || (typeof window !== "undefined" ? window.innerWidth : 1200);
 
     const paper = revealFrac <= 0 ? null : paperReveal(revealFrac, vh, vw);
+
+    const revealContentFade = isRevealPhase
+        ? clamp01(1 - revealFrac / 0.3)
+        : 1;
 
     const panelTransform = paper
         ? `translate3d(${paper.translateX.toFixed(1)}px, ${paper.translateY.toFixed(1)}px, 0) rotate(${paper.rotateZ.toFixed(2)}deg)`
@@ -535,7 +652,15 @@ export default function About() {
                     </p>
                 </div>
 
-                <div ref={stageRef} className="ab-stage">
+                <div
+                    ref={stageRef}
+                    className="ab-stage"
+                    style={{
+                        opacity: revealContentFade,
+                        visibility:
+                            revealContentFade < 0.02 ? "hidden" : "visible",
+                    }}
+                >
                     {TEAM.map((member, i) => ({ member, i }))
                         .sort((a, b) => {
                             if (phase !== "peel") return 0;
@@ -699,21 +824,22 @@ export default function About() {
 
                 .ab-text {
                     position: absolute;
-                    top: calc(var(--nav-h, 110px) + 40px);
-                    left: 52%;
-                    right: clamp(24px, 5vw, 72px);
+                    top: 50%;
+                    left: 54%;
+                    right: clamp(40px, 6vw, 96px);
                     z-index: 15;
-                    max-width: 420px;
+                    max-width: 460px;
+                    transform: translateY(-50%);
                     transition: opacity 0.35s ease;
                 }
 
                 .ab-text--centered {
                     left: 50%;
                     right: auto;
+                    top: calc(var(--nav-h, 110px) + 28px);
                     transform: translateX(-50%);
                     text-align: center;
                     max-width: 520px;
-                    top: calc(var(--nav-h, 110px) + 24px);
                 }
 
                 .ab-title {

@@ -35,11 +35,40 @@ const SCROLL_WORDS = [
 ];
 
 const TOTAL_WORDS = SCROLL_WORDS.length;
-const SCROLL_PER_WORD_VH = 0.08;
 const SEQUENCE_SCROLL_VH = 3.2;
+/** مدت اسکرولی که صفحه روی حالت تمام‌صفحه می‌ماند قبل از رفتن به بخش بعد */
+const HOLD_VH = 0.35;
 const DESKTOP_MIN_WIDTH = 1024;
 
-const WORDS_SCROLL_VH = TOTAL_WORDS * SCROLL_PER_WORD_VH + 1;
+/** نسبت پایان مرحله‌ی بزرگ‌شدن نسبت به کل (بقیه = مکث روی تمام‌صفحه) */
+const SEQ_END_RATIO = SEQUENCE_SCROLL_VH / (SEQUENCE_SCROLL_VH + HOLD_VH);
+
+/** سرعت عوض شدن خودکار متن‌ها (میلی‌ثانیه) — مستقل از اسکرول */
+const WORD_CYCLE_MS = 400;
+
+/** آخرین فریم‌هایی که با یک اسکرول عادی سریع رد می‌شوند (هم رفت هم برگشت) */
+const FAST_TAIL_FRAMES = 5;
+/** سهم این فریم‌های پایانی از کل اسکرول sequence (کوچک‌تر = سریع‌تر رد می‌شوند) */
+const FAST_TAIL_PORTION = 0.07;
+
+/**
+ * نگاشت پیشرفت اسکرول (۰..۱) به موقعیت پیوسته‌ی فریم (۰..FRAME_COUNT-1).
+ * فریم‌های ابتدایی بیشتر اسکرول می‌خواهند، ولی FAST_TAIL_FRAMES فریم آخر
+ * فقط FAST_TAIL_PORTION از اسکرول را می‌گیرند تا با یک اسکرول عادی رد شوند.
+ */
+function seqTToFrame(seqT: number): number {
+    const tailFrames = Math.min(FAST_TAIL_FRAMES, FRAME_COUNT - 1);
+    const lastNormalFrame = FRAME_COUNT - 1 - tailFrames;
+    const splitT = 1 - FAST_TAIL_PORTION;
+
+    if (seqT <= splitT) {
+        const t = splitT > 0 ? seqT / splitT : 1;
+        return t * lastNormalFrame;
+    }
+
+    const t = (seqT - splitT) / FAST_TAIL_PORTION;
+    return lastNormalFrame + t * tailFrames;
+}
 
 /**
  * ابعاد واقعی محدوده‌ی چیدمان (بدون scrollbar).
@@ -148,9 +177,7 @@ export default function HeroSection() {
     const [mounted, setMounted] = useState(false);
     const [sequenceReady, setSequenceReady] = useState(false);
 
-    const totalVh = isDesktop
-        ? SEQUENCE_SCROLL_VH + WORDS_SCROLL_VH
-        : WORDS_SCROLL_VH;
+    const totalVh = isDesktop ? SEQUENCE_SCROLL_VH + HOLD_VH : 1;
 
     useLayoutEffect(() => {
         const mq = window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`);
@@ -207,42 +234,17 @@ export default function HeroSection() {
         imagesRef.current = images;
     }, [mounted, isDesktop]);
 
+    // متن‌ها به‌صورت خودکار و آرام عوض می‌شوند (مستقل از اسکرول) —
+    // هم در حین بزرگ شدن صفحه (داخل گوشی) و هم وقتی تمام‌صفحه است.
     useEffect(() => {
-        if (!mounted || isDesktop) return;
+        if (!mounted) return;
 
-        const handleScroll = () => {
-            const wrapper = wrapperRef.current;
-            if (!wrapper) return;
+        const id = window.setInterval(() => {
+            setWordIndex((prev) => (prev + 1) % TOTAL_WORDS);
+        }, WORD_CYCLE_MS);
 
-            const wrapperTop = wrapper.getBoundingClientRect().top;
-            const scrolledIntoWrapper = -wrapperTop;
-            const totalScrollDistance = wrapper.offsetHeight - window.innerHeight;
-
-            if (scrolledIntoWrapper < 0) {
-                setWordIndex(0);
-                setDone(false);
-                return;
-            }
-
-            if (scrolledIntoWrapper >= totalScrollDistance) {
-                setWordIndex(TOTAL_WORDS - 1);
-                setDone(true);
-                return;
-            }
-
-            setDone(false);
-            const progress = scrolledIntoWrapper / totalScrollDistance;
-            const idx = Math.min(
-                Math.floor(progress * TOTAL_WORDS),
-                TOTAL_WORDS - 1
-            );
-            setWordIndex((prev) => (prev !== idx ? idx : prev));
-        };
-
-        window.addEventListener("scroll", handleScroll, { passive: true });
-        handleScroll();
-        return () => window.removeEventListener("scroll", handleScroll);
-    }, [mounted, isDesktop]);
+        return () => window.clearInterval(id);
+    }, [mounted]);
 
     useEffect(() => {
         if (!mounted || !isDesktop || !sequenceReady) return;
@@ -257,9 +259,6 @@ export default function HeroSection() {
 
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
-
-        let introRatio =
-            SEQUENCE_SCROLL_VH / (SEQUENCE_SCROLL_VH + WORDS_SCROLL_VH);
 
         const resizeCanvas = () => {
             const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -315,82 +314,87 @@ export default function HeroSection() {
             }
         };
 
+        // کل اسکرول فقط مرحله‌ی بزرگ شدن صفحه را کنترل می‌کند؛
+        // متن‌ها اینجا دست نمی‌خورند (با تایمر جدا عوض می‌شوند).
+        // بعد از کامل شدن بزرگ‌شدن (SEQ_END_RATIO)، صفحه روی تمام‌صفحه می‌ماند تا پایان pin.
         const applyFrame = (progress: number) => {
-            if (progress <= introRatio) {
-                const seqT = progress / introRatio;
-                const frameIdx = Math.min(
-                    FRAME_COUNT - 1,
-                    Math.floor(seqT * (FRAME_COUNT - 1))
-                );
-
-                drawSequenceFrame(frameIdx);
-
-                const fullscreen = frameIdx >= FRAME_COUNT - 1;
-                // کانواس اسکچ (سفید) باید قبل از چند فریم آخر کامل محو شود،
-                // تا زوم نهایی روی پس‌زمینه‌ی تیره stage انجام شود نه روی سفیدی اسکچ.
-                const canvasFadeStart = 0.74;
-                const canvasFadeEnd = 0.9;
-                const canvasOpacity =
-                    fullscreen || seqT >= canvasFadeEnd
-                        ? 0
-                        : seqT > canvasFadeStart
-                          ? 1 -
-                            (seqT - canvasFadeStart) /
-                                (canvasFadeEnd - canvasFadeStart)
-                          : 1;
-
-                gsap.set(canvas, { opacity: canvasOpacity });
-                gsap.set(heroLayer, { opacity: 1 });
-                gsap.set(hint, {
-                    opacity: seqT < 0.08 ? 1 : Math.max(0, 1 - seqT * 4),
-                });
-
-                setWordIndex(0);
-                setDone(!fullscreen && seqT < 0.995);
-                return;
-            }
-
-            gsap.set(canvas, { opacity: 0 });
-            gsap.set(heroLayer, {
-                opacity: 1,
-                x: 0,
-                y: 0,
-                scale: 1,
-            });
-            clearHeroClip(heroClipRef.current);
-            gsap.set(hint, { opacity: 0 });
-
-            const wordProgress = (progress - introRatio) / (1 - introRatio);
-            const idx = Math.min(
-                Math.floor(wordProgress * TOTAL_WORDS),
-                TOTAL_WORDS - 1
+            const seqT = Math.min(1, progress / SEQ_END_RATIO);
+            const framePos = seqTToFrame(seqT);
+            const frameIdx = Math.min(
+                FRAME_COUNT - 1,
+                Math.floor(framePos)
             );
-            setWordIndex((prev) => (prev !== idx ? idx : prev));
-            setDone(wordProgress >= 0.995);
+
+            drawSequenceFrame(frameIdx);
+
+            const fullscreen = frameIdx >= FRAME_COUNT - 1;
+            // کانواس اسکچ (سفید) باید قبل از چند فریم آخر کامل محو شود،
+            // تا زوم نهایی روی پس‌زمینه انجام شود نه روی سفیدی اسکچ.
+            // بر اساس موقعیت فریم (نه seqT) تا با فشرده‌شدن فریم‌های پایانی هم‌خوان بماند.
+            const canvasFadeStartFrame = FRAME_COUNT - 1 - FAST_TAIL_FRAMES - 4;
+            const canvasFadeEndFrame = FRAME_COUNT - 1 - FAST_TAIL_FRAMES + 1;
+            const canvasOpacity =
+                fullscreen || framePos >= canvasFadeEndFrame
+                    ? 0
+                    : framePos > canvasFadeStartFrame
+                      ? 1 -
+                        (framePos - canvasFadeStartFrame) /
+                            (canvasFadeEndFrame - canvasFadeStartFrame)
+                      : 1;
+
+            gsap.set(canvas, { opacity: canvasOpacity });
+            gsap.set(heroLayer, { opacity: 1 });
+            gsap.set(hint, {
+                opacity: seqT < 0.08 ? 1 : Math.max(0, 1 - seqT * 4),
+            });
+
+            setDone(!fullscreen && seqT < 0.995);
         };
 
         resizeCanvas();
         drawSequenceFrame(0);
         applyFrame(0);
 
+        // محدوده‌ی پیشرفت (۰..۱) که فریم‌های پایانی در آن قرار دارند.
+        // کاربر نباید بتواند داخل این محدوده توقف کند؛ باید در جهت اسکرول رد شود.
+        const tailStartProgress = SEQ_END_RATIO * (1 - FAST_TAIL_PORTION);
+        const tailEndProgress = SEQ_END_RATIO;
+
         const ctx_gsap = gsap.context(() => {
             ScrollTrigger.create({
                 trigger: wrapper,
                 start: "top top",
                 end: () =>
-                    `+=${(SEQUENCE_SCROLL_VH + WORDS_SCROLL_VH) * window.innerHeight}`,
+                    `+=${(SEQUENCE_SCROLL_VH + HOLD_VH) * window.innerHeight}`,
                 pin: stage,
                 pinSpacing: true,
-                scrub: 2,
+                scrub: 0.6,
                 anticipatePin: 1,
                 invalidateOnRefresh: true,
+                snap: {
+                    // اگر توقف داخل ناحیه‌ی فریم‌های پایانی بود، در جهت اسکرول
+                    // یا تا تمام‌صفحه (جلو) یا تا قبل از فریم‌های پایانی (عقب) گلاید کن.
+                    snapTo: (value, self) => {
+                        if (
+                            value > tailStartProgress &&
+                            value < tailEndProgress
+                        ) {
+                            const dir = self?.direction ?? 1;
+                            return dir >= 0
+                                ? tailEndProgress
+                                : tailStartProgress;
+                        }
+                        return value;
+                    },
+                    duration: { min: 0.05, max: 0.12 },
+                    delay: 0,
+                    ease: "power2.out",
+                },
                 onUpdate: (self) => applyFrame(self.progress),
             });
         }, wrapper);
 
         const handleResize = () => {
-            introRatio =
-                SEQUENCE_SCROLL_VH / (SEQUENCE_SCROLL_VH + WORDS_SCROLL_VH);
             resizeCanvas();
             ScrollTrigger.refresh();
             const st = ScrollTrigger.getAll().find((t) => t.trigger === wrapper);
@@ -413,7 +417,11 @@ export default function HeroSection() {
                 id="home"
                 ref={wrapperRef}
                 className="hero-wrapper"
-                style={{ height: `${totalVh * 100}vh` }}
+                style={
+                    isDesktop
+                        ? undefined
+                        : { height: `${totalVh * 100}vh` }
+                }
             >
                 {isDesktop ? (
                     <div ref={stageRef} className="hero-stage">
@@ -486,7 +494,7 @@ export default function HeroSection() {
 
                 .sequence-scroll-hint {
                     position: absolute;
-                    bottom: 36px;
+                    bottom: -5px;
                     left: 50%;
                     transform: translateX(-50%);
                     z-index: 3;
@@ -494,9 +502,9 @@ export default function HeroSection() {
                     flex-direction: column;
                     align-items: center;
                     gap: 10px;
-                    color: rgba(255, 255, 255, 0.75);
+                    color: rgba(0, 0, 0, 0.75);
                     font-family: var(--font-geist-sans), sans-serif;
-                    font-size: 12px;
+                    font-size: 15px;
                     letter-spacing: 0.18em;
                     text-transform: uppercase;
                     pointer-events: none;

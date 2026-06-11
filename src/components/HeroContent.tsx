@@ -47,7 +47,9 @@ export default function HeroContent({
                     <p className="hero-static">We Achieved Transforming</p>
 
                     <div className="hero-middle-row">
-                        <span className="hero-script-word">{word}</span>
+                        <span key={word} className="hero-script-word">
+                            {word}
+                        </span>
                         <span className="hero-static hero-to"> To</span>
                     </div>
 
@@ -148,6 +150,18 @@ export default function HeroContent({
                     letter-spacing: 0.01em;
                     line-height: 1.2;
                     display: inline-block;
+                    animation: word-fade 0.7s ease;
+                }
+
+                @keyframes word-fade {
+                    from {
+                        opacity: 0;
+                        transform: translateY(6px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
                 }
 
                 .scroll-hint {
