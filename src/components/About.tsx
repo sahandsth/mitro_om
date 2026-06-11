@@ -2,6 +2,27 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Footer from "@/components/Footer";
+import AboutMobile from "@/components/AboutMobile";
+
+const MOBILE_QUERY = "(max-width: 768px)";
+
+export default function About() {
+    const [isMobile, setIsMobile] = useState<boolean | null>(null);
+
+    useEffect(() => {
+        const mq = window.matchMedia(MOBILE_QUERY);
+        const update = () => setIsMobile(mq.matches);
+        update();
+        mq.addEventListener("change", update);
+        return () => mq.removeEventListener("change", update);
+    }, []);
+
+    if (isMobile === null) {
+        return <div id="about" style={{ minHeight: "100vh" }} />;
+    }
+
+    return isMobile ? <AboutMobile /> : <AboutDesktop />;
+}
 
 const TEAM = [
     {
@@ -52,7 +73,7 @@ type CardLayout = {
 
 type Phase = "intro" | "peel" | "assemble" | "final" | "reveal" | "revealed";
 
-export default function About() {
+function AboutDesktop() {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const stageRef = useRef<HTMLDivElement>(null);
     const [stageSize, setStageSize] = useState({ w: 0, h: 0 });

@@ -447,7 +447,7 @@ function PfImg({
     );
 }
 
-export default function Portfolio() {
+function PortfolioDesktop() {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const stageRef = useRef<HTMLDivElement>(null);
     const heroMeasureRef = useRef<HTMLDivElement>(null);
@@ -1919,4 +1919,392 @@ export default function Portfolio() {
             `}</style>
         </>
     );
+}
+
+/* ───────────────────────── Mobile experience ───────────────────────── */
+
+/**
+ * The desktop layout is a horizontal, scroll-driven stack that depends on a
+ * wide viewport. On phones we render a dedicated vertical, editorial layout
+ * with scroll-reveal animations instead — same content, same brand language,
+ * but a touch-first design. The PC component above is untouched.
+ */
+function PortfolioMobile() {
+    const [mounted, setMounted] = useState(false);
+    const prefersReducedMotion = () =>
+        typeof window !== "undefined" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const [visible, setVisible] = useState<boolean[]>(() => {
+        const reduce = prefersReducedMotion();
+        return PROJECTS.map(() => reduce);
+    });
+    const cardRefs = useRef<(HTMLElement | null)[]>([]);
+
+    useEffect(() => {
+        const id = requestAnimationFrame(() => setMounted(true));
+        return () => cancelAnimationFrame(id);
+    }, []);
+
+    useEffect(() => {
+        if (prefersReducedMotion()) return;
+
+        const io = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (!entry.isIntersecting) return;
+                    const idx = Number(
+                        (entry.target as HTMLElement).dataset.idx
+                    );
+                    setVisible((prev) => {
+                        if (prev[idx]) return prev;
+                        const next = [...prev];
+                        next[idx] = true;
+                        return next;
+                    });
+                    io.unobserve(entry.target);
+                });
+            },
+            { threshold: 0.18, rootMargin: "0px 0px -8% 0px" }
+        );
+
+        cardRefs.current.forEach((el) => el && io.observe(el));
+        return () => io.disconnect();
+    }, []);
+
+    return (
+        <section
+            id="portfolio"
+            className={`pfm ${mounted ? "pfm--in" : ""}`}
+        >
+            <span
+                id="portfolio-entry"
+                aria-hidden="true"
+                style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: 0,
+                    height: 0,
+                    pointerEvents: "none",
+                }}
+            />
+            <header className="pfm-intro">
+                <span className="pfm-eyebrow">Selected Work</span>
+                <h1 className="pfm-intro-title">Portfolio</h1>
+                <p className="pfm-intro-desc">
+                    The brand architecture for a home appliances company was
+                    designed with a focus on functionality and aesthetics,
+                    ensuring a seamless user experience across all touchpoints.
+                </p>
+                <ul className="pfm-intro-tags">
+                    {INTRO_TAGS.map((tag) => (
+                        <li
+                            key={tag}
+                            className={
+                                tag === "Social Media Management"
+                                    ? "pfm-intro-tag pfm-intro-tag--active"
+                                    : "pfm-intro-tag"
+                            }
+                        >
+                            {tag}
+                        </li>
+                    ))}
+                </ul>
+            </header>
+
+            <div className="pfm-list">
+                {PROJECTS.map((project, i) => (
+                    <article
+                        key={project.id}
+                        data-idx={i}
+                        ref={(el) => {
+                            cardRefs.current[i] = el;
+                        }}
+                        className={`pfm-card ${
+                            visible[i] ? "pfm-card--visible" : ""
+                        }`}
+                    >
+                        <div className="pfm-card-head">
+                            <span className="pfm-card-num">{project.id}</span>
+                            <span className="pfm-card-year">
+                                {project.year}
+                            </span>
+                        </div>
+
+                        <h2 className="pfm-card-title">{project.title}</h2>
+
+                        <div className="pfm-hero">
+                            <PfImg
+                                src={project.mainImage}
+                                alt={project.title}
+                                sizes="(max-width: 768px) 92vw, 480px"
+                                imagesReady
+                            />
+                        </div>
+
+                        <div className="pfm-thumbs">
+                            {project.scatter.slice(0, 4).map((src, j) => (
+                                <div
+                                    key={j}
+                                    className="pfm-thumb"
+                                    style={{
+                                        ["--d" as string]: `${j * 90}ms`,
+                                    }}
+                                >
+                                    <PfImg
+                                        src={src}
+                                        alt=""
+                                        sizes="(max-width: 768px) 44vw, 220px"
+                                        imagesReady
+                                    />
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="pfm-card-foot">
+                            <span className="pfm-card-label">Branding</span>
+                            <p className="pfm-card-desc">
+                                {project.description}
+                            </p>
+                        </div>
+                    </article>
+                ))}
+            </div>
+
+            <style jsx>{`
+                .pfm {
+                    position: relative;
+                    background: #c4c4c4;
+                    padding: calc(var(--nav-h, 110px) + 24px) 22px 96px;
+                    overflow: hidden;
+                }
+
+                /* ── Intro ── */
+                .pfm-intro {
+                    margin-bottom: 56px;
+                    opacity: 0;
+                    transform: translateY(26px);
+                    transition: opacity 0.7s ease, transform 0.7s ease;
+                }
+
+                .pfm--in .pfm-intro {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+
+                .pfm-eyebrow {
+                    display: inline-block;
+                    font-family: "Francy", serif;
+                    font-size: 12px;
+                    letter-spacing: 0.22em;
+                    text-transform: uppercase;
+                    color: rgba(45, 45, 45, 0.5);
+                    margin-bottom: 14px;
+                }
+
+                .pfm-intro-title {
+                    font-family: "Francy", serif;
+                    font-size: clamp(56px, 22vw, 96px);
+                    font-weight: 400;
+                    color: #ffffff;
+                    margin: 0 0 22px;
+                    line-height: 0.9;
+                    letter-spacing: -0.03em;
+                }
+
+                .pfm-intro-desc {
+                    font-family: "Cormorant Garamond", Georgia, serif;
+                    font-size: 16px;
+                    font-weight: 300;
+                    color: rgba(45, 45, 45, 0.74);
+                    line-height: 1.75;
+                    margin: 0 0 28px;
+                    max-width: 38ch;
+                }
+
+                .pfm-intro-tags {
+                    list-style: none;
+                    margin: 0;
+                    padding: 0;
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px 18px;
+                }
+
+                .pfm-intro-tag {
+                    font-family: "Francy", serif;
+                    font-size: 13px;
+                    color: rgba(45, 45, 45, 0.4);
+                }
+
+                .pfm-intro-tag--active {
+                    color: rgba(30, 30, 30, 0.85);
+                    font-weight: 500;
+                }
+
+                /* ── Cards ── */
+                .pfm-list {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 72px;
+                }
+
+                .pfm-card {
+                    position: relative;
+                }
+
+                .pfm-card-head {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: baseline;
+                    border-top: 1px solid rgba(255, 255, 255, 0.4);
+                    padding-top: 14px;
+                    margin-bottom: 12px;
+                    opacity: 0;
+                    transform: translateY(20px);
+                    transition: opacity 0.6s ease, transform 0.6s ease;
+                }
+
+                .pfm-card-num {
+                    font-family: "Francy", serif;
+                    font-size: 14px;
+                    letter-spacing: 0.08em;
+                    color: rgba(45, 45, 45, 0.55);
+                }
+
+                .pfm-card-year {
+                    font-family: "Francy", serif;
+                    font-size: 14px;
+                    color: rgba(45, 45, 45, 0.55);
+                }
+
+                .pfm-card-title {
+                    font-family: "Francy", serif;
+                    font-size: clamp(26px, 8vw, 40px);
+                    font-weight: 400;
+                    color: #ffffff;
+                    margin: 0 0 22px;
+                    line-height: 1.08;
+                    letter-spacing: -0.01em;
+                    text-transform: uppercase;
+                    opacity: 0;
+                    transform: translateY(22px);
+                    transition: opacity 0.6s ease 0.05s,
+                        transform 0.6s ease 0.05s;
+                }
+
+                .pfm-hero {
+                    position: relative;
+                    width: 100%;
+                    aspect-ratio: 4 / 5;
+                    overflow: hidden;
+                    background: #b8b8b8;
+                    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.18);
+                    clip-path: inset(0 0 100% 0);
+                    transform: scale(1.06);
+                    transition: clip-path 0.85s cubic-bezier(0.16, 1, 0.3, 1)
+                            0.08s,
+                        transform 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.08s;
+                }
+
+                .pfm-thumbs {
+                    display: grid;
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 12px;
+                    margin-top: 12px;
+                }
+
+                .pfm-thumb {
+                    position: relative;
+                    width: 100%;
+                    aspect-ratio: 1.3;
+                    overflow: hidden;
+                    background: #b8b8b8;
+                    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+                    opacity: 0;
+                    transform: translateY(26px) scale(0.94);
+                    transition: opacity 0.6s ease var(--d, 0ms),
+                        transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)
+                            var(--d, 0ms);
+                }
+
+                .pfm-card-foot {
+                    margin-top: 22px;
+                    opacity: 0;
+                    transform: translateY(18px);
+                    transition: opacity 0.6s ease 0.12s,
+                        transform 0.6s ease 0.12s;
+                }
+
+                .pfm-card-label {
+                    display: inline-block;
+                    font-family: "Francy", serif;
+                    font-size: 13px;
+                    letter-spacing: 0.04em;
+                    color: rgba(50, 50, 50, 0.55);
+                    margin-bottom: 8px;
+                }
+
+                .pfm-card-desc {
+                    font-family: "Cormorant Garamond", Georgia, serif;
+                    font-size: 15px;
+                    font-weight: 300;
+                    color: rgba(50, 50, 50, 0.8);
+                    line-height: 1.7;
+                    margin: 0;
+                }
+
+                /* ── Reveal state ── */
+                .pfm-card--visible .pfm-card-head,
+                .pfm-card--visible .pfm-card-title,
+                .pfm-card--visible .pfm-card-foot {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+
+                .pfm-card--visible .pfm-hero {
+                    clip-path: inset(0 0 0 0);
+                    transform: scale(1);
+                }
+
+                .pfm-card--visible .pfm-thumb {
+                    opacity: 1;
+                    transform: translateY(0) scale(1);
+                }
+
+                @media (prefers-reduced-motion: reduce) {
+                    .pfm-intro,
+                    .pfm-card-head,
+                    .pfm-card-title,
+                    .pfm-card-foot,
+                    .pfm-hero,
+                    .pfm-thumb {
+                        opacity: 1;
+                        transform: none;
+                        clip-path: none;
+                        transition: none;
+                    }
+                }
+            `}</style>
+        </section>
+    );
+}
+
+/**
+ * Responsive entry point. Renders the untouched desktop experience on wide
+ * viewports and the dedicated mobile layout on phones. Starts on desktop so
+ * SSR and first client paint match, then swaps after measuring the viewport.
+ */
+export default function Portfolio() {
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        const mq = window.matchMedia("(max-width: 768px)");
+        const update = () => setIsMobile(mq.matches);
+        update();
+        mq.addEventListener("change", update);
+        return () => mq.removeEventListener("change", update);
+    }, []);
+
+    return isMobile ? <PortfolioMobile /> : <PortfolioDesktop />;
 }
